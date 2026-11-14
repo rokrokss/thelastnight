@@ -1,6 +1,6 @@
 import { PAD, TEX_H, TEX_W, VIEW_H, VIEW_W } from '../core/constants';
 import { shade, vec3 } from '../core/color';
-import { clamp, hash2, lerp, valueNoise } from '../core/math';
+import { clamp, hash2, lerp, smoothstep, valueNoise } from '../core/math';
 import { GLOW, lookFor, RAMP } from '../art/palette';
 import {
   drawPuppet,
@@ -19,11 +19,23 @@ import type { Stage } from '../gfx/stage';
 import type { Flicker, LightDef } from './level';
 import type { Drone, Mover, World } from './world';
 
+/** Offsets a scene can lay over the chapter's look (all 0 = unchanged). */
+export interface Mood {
+  vignette: number;
+  saturation: number;
+  exposure: number;
+  aberration: number;
+  bloom: number;
+}
+
 /** Cinematic state owned by the director (cutscenes, transitions). */
 export interface Cine {
   letterbox: number;
   fade: [number, number, number, number];
   flash: number;
+  /** Wipe transition progress: 0 off, 0.5 frame covered, 1 gone. */
+  wipe: number;
+  mood: Mood;
 }
 
 export function flickerValue(mode: Flicker | undefined, t: number, seed: number): number {
@@ -111,6 +123,7 @@ export class View {
   private camX = 0;
   private camY = 0;
   private zoom = 1;
+  private roll = 0;
 
   constructor(art: SceneArt, world: World) {
     this.art = art;
@@ -127,12 +140,13 @@ export class View {
     }
   }
 
-  /** World position → view pixel (0..480, 0..270), for anchoring UI. */
+  /** World position → view pixel (0..480, 0..270), for anchoring UI. Mirrors the renderer's camera transform. */
   toScreen(wx: number, wy: number): [number, number] {
-    return [
-      (wx - this.camX - VIEW_W / 2) * this.zoom + VIEW_W / 2,
-      (wy - this.camY - VIEW_H / 2) * this.zoom + VIEW_H / 2,
-    ];
+    const dx = wx - this.camX - VIEW_W / 2;
+    const dy = wy - this.camY - VIEW_H / 2;
+    const c = Math.cos(this.roll);
+    const s = Math.sin(this.roll);
+    return [(dx * c + dy * s) * this.zoom + VIEW_W / 2, (-dx * s + dy * c) * this.zoom + VIEW_H / 2];
   }
 
   private spring(id: string): Spring {
@@ -233,11 +247,16 @@ export class View {
     const sh = cam.shake * this.shakeScale;
     const shx = sh > 0 ? (valueNoise(t * 41, 3.1) - 0.5) * 9 * sh : 0;
     const shy = sh > 0 ? (valueNoise(t * 37, 9.7) - 0.5) * 7 * sh : 0;
-    const camX = cam.x + shx;
-    const camY = cam.y + shy;
+    // A hand-held breath: slow, sub-pixel drift so a held frame never looks frozen.
+    const hh = this.shakeScale;
+    const hx = (valueNoise(t * 0.31, 1.7) - 0.5) * 1.3 * hh;
+    const hy = (valueNoise(t * 0.27, 5.3) - 0.5) * 1.0 * hh;
+    const camX = cam.x + shx + hx;
+    const camY = cam.y + shy + hy;
     this.camX = camX;
     this.camY = camY;
     this.zoom = cam.zoom;
+    this.roll = cam.roll + (valueNoise(t * 0.21, 8.1) - 0.5) * 0.0035 * hh + (sh > 0 ? (valueNoise(t * 29, 4.4) - 0.5) * 0.02 * sh : 0);
     st.begin(camX, camY);
     const art = this.art;
     const weather = w.weather;
@@ -417,9 +436,48 @@ export class View {
       look.ambMid = [base.ambMid[0] + 1.2 * pulse, base.ambMid[1] + 1.3 * pulse, base.ambMid[2] + 1.7 * pulse];
     }
 
+    // ---- lens ----
+    const z = cam.zoom;
+    // Tighter framing means shallower focus.
+    const aperture = 1 + (z - 1) * 0.7;
+    look.blurFar = base.blurFar * aperture;
+    look.blurMid = base.blurMid * aperture;
+    look.blurFg = base.blurFg * aperture;
+    look.blurPlay = 0;
+    const rack = cam.rack;
+    if (rack > 0.001) {
+      // Focus pulled forward: the foreground sharpens, the subject and the city soften.
+      look.blurFg = lerp(look.blurFg, 0.25, rack);
+      look.blurPlay = 2.4 * rack;
+      look.blurMid += 2.6 * rack;
+      look.blurFar += 3 * rack;
+    } else if (rack < -0.001) {
+      // Focus pushed deep: the skyline sharpens, the subject softens.
+      look.blurFar = lerp(look.blurFar, 0.35, -rack);
+      look.blurMid = lerp(look.blurMid, 0.3, -rack);
+      look.blurPlay = 2.2 * -rack;
+      look.blurFg += 3 * -rack;
+    }
+    const mood = cine.mood;
+    look.vignette += mood.vignette;
+    look.saturation += mood.saturation;
+    look.exposure += mood.exposure;
+    look.aberration += mood.aberration;
+    look.bloom += mood.bloom;
+
+    // A push-in is a move through depth: near layers grow faster than far ones.
+    const depth = (parallax: number): number => 1 / Math.max(0.25, 1 - parallax * (1 - 1 / z));
+    const zoomFg = depth(1.45);
+
     return {
       time: t,
-      zoom: cam.zoom,
+      zoom: z,
+      zoomFar: depth(0.1),
+      zoomMid: depth(0.45),
+      zoomFg,
+      fgFade: 1 - smoothstep(2.0, 3.2, zoomFg),
+      roll: this.roll,
+      wipe: cine.wipe,
       fracX: st.fracX,
       fracY: st.fracY,
       groundFogY0: w.level.groundY - camY - 30,

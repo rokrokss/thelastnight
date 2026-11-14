@@ -146,6 +146,8 @@ export interface CamZone extends Rect {
   zoom?: number;
   /** Bias the horizontal framing. */
   offX?: number;
+  /** Focus pull while inside: negative favours the distance (a vista), positive the foreground. */
+  rack?: number;
 }
 
 export interface Weather {

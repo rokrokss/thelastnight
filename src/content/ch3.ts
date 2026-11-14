@@ -1,6 +1,7 @@
 import { paintYards } from '../art/scenes/yards';
 import type { Chapter } from '../game/chapter';
 import { LevelBuilder, type LevelData } from '../game/level';
+import { both, single, twoShot } from './shots';
 
 const G = 560;
 const W = 3000;
@@ -153,13 +154,22 @@ export const yards: Chapter = {
   async intro(d) {
     d.lock();
     await d.bars(true, 0);
+    // Open on the floodlights and the working cranes with the far yard sharp, then come down to the gate.
+    d.cut({ x: 780, y: 300, zoom: 1, rack: -0.8, roll: 0 });
     await d.wait(0.5);
     void d.fade(0, 2.2);
+    d.drift({ x: 320, y: 440, zoom: 1.05, rack: 0 }, 6.5);
     await d.card('CHAPTER THREE', 'THE YARDS', 'The cranes work nights. So does the tide.');
+    d.drift({ on: 'sol', zoom: 1.3, dx: 30, dy: -10 }, 2.2);
     await d.walk('sol', 150, 34);
+    // Look down the yard, the way she has to go.
+    d.drift({ on: 'sol', zoom: 1, dx: 170, dy: -40, rack: -0.6 }, 2.6);
     await d.say('mun', 'The Yards. The third box is on SG-07, the tall crane at the far end. It used to carry my aerial.');
+    // Low and close: the wet ground at her boots.
+    d.drift({ on: 'sol', zoom: 1.7, dx: 0, dy: 12, rack: 0 }, 1.8);
     await d.say('sol', 'Water is already over the first bollards.');
     await d.say('mun', 'Then walk faster, dear.');
+    d.release(1.4);
     await d.bars(false);
     d.unlock();
     d.objective('Reach the big crane, SG-07');
@@ -169,15 +179,31 @@ export const yards: Chapter = {
   triggers: {
     rows(d) {
       d.bark('mun', 'Listener in the rows. The open boxes will hide you.', 4.5);
+      d.glance({ on: 'd1', zoom: 1, dy: 50 }, 2, 0.6);
     },
     wall(d) {
       d.bark('sol', 'The cranes are still running. Nobody told them either.', 4.5);
+      // Up the stacked wall to the box crossing it.
+      d.glance({ x: 1290, y: 410, zoom: 1, rack: -0.25 }, 2.4, 0.75);
     },
     flood(d) {
       d.bark('mun', 'Floodlights. A Listener can only see what its own lamp shows it. The big lamps are just weather.', 6);
+      d.glance({ on: 'd2', zoom: 1, dy: 46 }, 2.6, 0.6);
     },
-    crane(d) {
-      d.bark('sol', 'SG-07. Long way up.', 3);
+    async crane(d) {
+      const w = d.world;
+      d.lock();
+      w.stealthOff = true;
+      await d.bars(true, 0.5);
+      // Tilt up the whole height of the crane.
+      d.bark('sol', 'SG-07. Long way up.', 3.5);
+      await d.move({ x: 2470, y: 440, zoom: 1, rack: 0, roll: 0 }, 1);
+      await d.move({ x: 2560, y: 240, zoom: 1, rack: -0.3 }, 3.2);
+      await d.wait(0.7);
+      d.release(1.6);
+      await d.bars(false, 0.6);
+      w.stealthOff = false;
+      d.unlock();
     },
     async cha(d) {
       const w = d.world;
@@ -187,28 +213,45 @@ export const yards: Chapter = {
       cha.visible = true;
       await d.bars(true);
       d.sfx('spot', 0.7);
-      d.focus(2560, 290, 1.12, 2.2);
+      // He steps out of the cab: see him first, a little off level.
+      d.cut({ on: 'cha', zoom: 1.5, dx: -24, dy: -6, roll: -0.025, rack: 0 });
+      d.mood({ vignette: 0.14, saturation: -0.1 }, 0.4);
       await d.walk('cha', 2580, 30);
       d.faceEachOther('cha');
       await d.say('cha', 'Stop there. Spectrum Authority. Hands where I can see them.');
+      // Shot and reverse shot, each tipped a little the other way.
+      d.cut({ on: 'sol', zoom: 1.85, dx: 0, dy: -5, roll: 0.025 });
+      await d.wait(0.8);
+      both(d, 'cha');
       await d.say('cha', 'You are the carrier that came up in the Lanes. Then the Tops. You climb well.');
+      d.cut({ on: 'sol', zoom: 1.9, dx: 0, dy: -5, roll: 0.02 });
       await d.say('sol', 'Meridian told its members about the surge two hours ago. How many people on Pier Street are members?');
+      d.cut({ on: 'cha', zoom: 1.9, dx: 0, dy: -5, roll: -0.02 });
       await d.say('cha', 'That is not my department.');
+      // Hold on him while she decides what to say, slowly closing and levelling.
+      d.drift({ on: 'cha', zoom: 2.25, dy: -5, roll: 0 }, 7, 'out');
       const pick = await d.choose(['You grew up down here. I can hear it when you say Pier Street.', 'Arrest me after the tide. I will still be here.']);
+      d.calm(2.5);
       if (pick === 0) {
         await d.say('cha', '...Pike Row. Three streets back from the water.');
+        both(d, 'cha');
         await d.say('cha', 'I am going to walk the long way round to my radio. That is ten minutes.');
+        // He looks up at the tower his Wardens are circling.
+        d.drift({ on: ['sol', 'cha'], zoom: 1.08, dy: -46, rack: -0.5 }, 2.6);
         await d.say('cha', 'The Wardens over the Spire fly on my authorisation tonight. Paperwork gets lost in weather like this.');
         d.set('choice.cha', 1);
       } else {
         await d.say('cha', '...I have to call it in.');
+        both(d, 'cha');
         await d.say('cha', 'I do not have to call it in quickly.');
         d.set('choice.cha', 2);
       }
+      // He walks out of the frame; stay with her, watching him go.
+      d.drift({ on: 'sol', zoom: 1.45, dx: 44, dy: -8, roll: 0, rack: 0 }, 2.2);
       await d.walk('cha', 2760, 34);
       cha.visible = false;
-      d.release();
       await d.say('mun', 'I heard all of that. Remind me to be surprised by people more often.');
+      d.release(1.4);
       await d.bars(false);
       w.stealthOff = false;
       w.thing('relay3').enabled = true;
@@ -222,23 +265,32 @@ export const yards: Chapter = {
     async gil(d) {
       d.lock();
       d.faceEachOther('gil');
+      twoShot(d, 'gil');
       if (d.flag('yards.gil')) {
         await d.say('gil', 'Boxes move whether you are standing on them or not. Remember that.');
+        d.release(1);
         d.unlock();
         return;
       }
       await d.say('gil', 'Nobody walks into Yard Seven at this hour unless they are lost or they are trouble.');
+      single(d, 'sol', 1.8);
       await d.say('sol', 'I need to get up SG-07.');
+      single(d, 'gil');
       await d.say('gil', 'Trouble, then. I drove that crane thirty years before they taught it to drive itself.');
+      // Back to the two of them over the fire, closing slowly.
+      both(d, 'gil');
+      d.drift({ on: ['sol', 'gil'], zoom: 1.85, dy: -6 }, 9, 'out');
       await d.say('gil', 'The boxes move on their own now. Ride them. And there is an Authority man in the cab tonight. Cha. Not the worst of them.');
       const pick = await d.choose(['The water is coming up. You should go home.', 'Thanks for the warning.']);
       if (pick === 0) {
+        single(d, 'gil');
         await d.say('gil', 'This is home. But I will take the fire up to the gatehouse roof. For you.');
         d.set('yards.gil', 1);
       } else {
         await d.say('gil', 'Warnings are cheap. That is the whole point of them.');
         d.set('yards.gil', 2);
       }
+      d.release(1.2);
       d.unlock();
     },
 
@@ -249,6 +301,7 @@ export const yards: Chapter = {
       await d.walk('sol', 2598, 30);
       d.face('sol', 1);
       d.pose('sol', 'kneel');
+      d.drift({ on: 'sol', zoom: 1.75, dx: 12, dy: -6 }, 1.4);
       d.sfx('switch');
       await d.wait(0.5);
       await d.say('mun', 'Careful. The whole boom is swaying, so the signal will wander. Follow it.');
@@ -258,18 +311,25 @@ export const yards: Chapter = {
       d.sfx('relay');
       d.flash(0.25, 0.8);
       d.shake(0.3);
+      // Wide off the side of the boom, the yard small underneath, drifting in.
+      d.cut({ x: 2540, y: 330, zoom: 1, rack: 0, roll: 0 });
+      d.drift({ x: 2590, y: 270, zoom: 1.12 }, 4, 'out');
       d.pose('sol', null);
       d.set('yards.relay', 1);
       for (const id of ['d1', 'd2']) w.drone(id).active = false;
       await d.wait(0.8);
       await d.say('mun', 'Three. The chain reaches the water. One more link and it reaches the sky.');
-      d.focus(2700, 150, 1, 0.8);
-      await d.wait(1.6);
+      // Up and out toward the Spire, the focus going with it.
+      d.drift({ x: 2740, y: 150, zoom: 1, rack: -0.9 }, 2.6);
+      await d.wait(1.9);
       await d.say('sol', 'The Spire. Its service lift is on the far side of the channel.');
       d.sfx('static');
+      d.cut({ on: 'sol', zoom: 1.7, dx: 0, dy: -6, rack: 0 });
       await d.say('gil_radio', 'Then stay on the boom, mast-girl. I still have the override key. I will swing you across.');
+      // The boom swings: the horizon tips and the frame pulls wide.
       d.shake(0.45);
       d.sfx('gust', 0.8);
+      d.drift({ on: 'sol', zoom: 1.04, dx: 60, dy: -10, roll: 0.07, rack: -0.4 }, 1.9, 'in');
       await d.fade(1, 1.6);
       d.leave('spire');
     },

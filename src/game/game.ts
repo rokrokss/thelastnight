@@ -9,10 +9,16 @@ import { UI } from '../ui/ui';
 import type { Chapter } from './chapter';
 import { Session } from './session';
 import { View, type Cine } from './view';
-import type { FailReason } from './world';
+import type { FailReason, World } from './world';
 
 const NO_INPUT: Controls = { held: () => false, pressed: () => false };
-const BLACK: Cine = { letterbox: 0, fade: [0, 0, 0, 1], flash: 0 };
+const BLACK: Cine = {
+  letterbox: 0,
+  fade: [0, 0, 0, 1],
+  flash: 0,
+  wipe: 0,
+  mood: { vignette: 0, saturation: 0, exposure: 0, aberration: 0, bloom: 0 },
+};
 
 /** Wait for the next painted frame (or a short timeout, so loading never stalls in a hidden tab). */
 const frame = (): Promise<void> =>
@@ -48,6 +54,8 @@ export class Game {
   private busy = false;
   private last = 0;
   private flags: Record<string, number> = {};
+  /** A chapter asked to hand over during this frame; acted on once the frame is finished. */
+  private pendingExit: string | null = null;
   private clock = 0;
   private hornT = 20;
 
@@ -285,6 +293,7 @@ export class Game {
   /** Build a chapter's world and art behind a loading veil. */
   private async load(ch: Chapter, checkpoint: string | null, flags: Record<string, number>): Promise<void> {
     this.busy = true;
+    this.pendingExit = null;
     this.ui.setLoading(true, ch.id === 'title' ? 'SKYWAVE' : 'TUNING…');
     this.ui.clear();
     this.ui.objective(null);
@@ -293,25 +302,36 @@ export class Game {
     this.view = null;
     await frame();
     await frame();
-    this.flags = flags;
-    const session = new Session(ch, flags, checkpoint, this.ui, this.audio, {
-      onSave: (cp, f) => {
-        if (this.mode === 'play') this.save.setProgress({ chapter: ch.id, checkpoint: cp, flags: f });
-      },
-      onFail: (reason) => this.onFail(reason),
-      onRespawn: () => undefined,
-      onExit: (next) => void this.onExit(next),
-    });
-    const view = new View(ch.paint(session.level), session.world);
-    view.onThunder = () => {
-      window.setTimeout(() => this.audio.sfx('thunder'), 250 + Math.random() * 500);
-      session.world.camera.addShake(0.12);
-    };
-    this.session = session;
-    this.view = view;
-    this.ui.project = (x, y) => view.toScreen(x, y);
-    this.applySettings();
-    this.ui.setLoading(false);
+    try {
+      this.flags = flags;
+      const session = new Session(ch, flags, checkpoint, this.ui, this.audio, {
+        onSave: (cp, f) => {
+          if (this.mode === 'play') this.save.setProgress({ chapter: ch.id, checkpoint: cp, flags: f });
+        },
+        onFail: (reason) => this.onFail(reason),
+        onRespawn: () => undefined,
+        // Called from inside the session's update. Tearing the session down
+        // there would pull it out from under the rest of that frame, so only
+        // note the request; tick() acts on it once the frame is finished.
+        onExit: (next) => {
+          this.pendingExit = next;
+        },
+      });
+      const view = new View(ch.paint(session.level), session.world);
+      view.onThunder = () => {
+        window.setTimeout(() => this.audio.sfx('thunder'), 250 + Math.random() * 500);
+        session.world.camera.addShake(0.12);
+      };
+      this.session = session;
+      this.view = view;
+      this.ui.project = (x, y) => view.toScreen(x, y);
+      this.applySettings();
+      this.ui.setLoading(false);
+    } catch (e) {
+      // Say so, rather than leaving an unexplained black screen. The pause menu still leads back to the title.
+      console.error(e);
+      this.ui.setLoading(true, 'THIS CHAPTER COULD NOT BE LOADED.  PLEASE RELOAD THE PAGE.');
+    }
     this.busy = false;
   }
 
@@ -377,10 +397,13 @@ export class Game {
 
   // ------------------------------------------------------------------- frame
   private frame(now: number): void {
+    // Book the next frame before doing any work: if something below throws,
+    // the error is reported and the game carries on, instead of freezing on
+    // whatever picture happened to be on screen.
+    requestAnimationFrame((t) => this.frame(t));
     const real = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     this.tick(this.hold ? 0 : real, true);
-    requestAnimationFrame((t) => this.frame(t));
   }
 
   /**
@@ -429,21 +452,34 @@ export class Game {
       const w = s.world;
       if (dt > 0) {
         if (this.mode === 'title') {
-          w.camera.focus = { x: 520 + Math.sin(this.clock * 0.06) * 110, y: 330 + Math.sin(this.clock * 0.045) * 90, zoom: 1, rate: 0.5 };
+          // A slow crane up and down the mast behind the menu.
+          w.camera.cut(w, {
+            x: 520 + Math.sin(this.clock * 0.06) * 110,
+            y: 330 + Math.sin(this.clock * 0.045) * 90,
+            zoom: 1.04 + Math.sin(this.clock * 0.033) * 0.04,
+            roll: Math.sin(this.clock * 0.05) * 0.006,
+            rack: 0,
+          });
         }
         s.update(dt, this.ui.blocking || this.mode === 'title' ? NO_INPUT : input);
       }
-      // The session may have swapped its world (respawn) or ended (exit).
+      // The session may have swapped its world during the update (respawn).
       const world = s.world;
-      this.consumeFx(v);
-      this.updateHud();
-      this.updateSound(dt);
+      this.consumeFx(world, v);
+      this.updateHud(s);
+      this.updateSound(s, dt);
       const fp = v.draw(this.stage, world, dt, s.director.cine);
       if (render) this.renderer.render(this.stage.surf, fp);
     } else if (render) {
       this.renderer.render(this.stage.surf, {
         time: 0,
         zoom: 1,
+        zoomFar: 1,
+        zoomMid: 1,
+        zoomFg: 1,
+        fgFade: 1,
+        roll: 0,
+        wipe: 0,
         fracX: 0,
         fracY: 0,
         groundFogY0: 0,
@@ -457,10 +493,16 @@ export class Game {
     }
     this.ui.update(dt, real);
     this.audio.update();
+    // Hand over to the next chapter last, when nothing else in this frame
+    // still needs the session that is about to be replaced.
+    if (this.pendingExit !== null) {
+      const next = this.pendingExit;
+      this.pendingExit = null;
+      void this.onExit(next);
+    }
   }
 
-  private consumeFx(v: View): void {
-    const w = this.session!.world;
+  private consumeFx(w: World, v: View): void {
     for (const f of w.fx) {
       switch (f.type) {
         case 'step':
@@ -499,8 +541,7 @@ export class Game {
     w.fx.length = 0;
   }
 
-  private updateHud(): void {
-    const s = this.session!;
+  private updateHud(s: Session): void {
     const w = s.world;
     const p = w.player;
     if (this.mode !== 'play' || this.paused) {
@@ -528,8 +569,7 @@ export class Game {
     this.ui.setPrompt(null);
   }
 
-  private updateSound(dt: number): void {
-    const s = this.session!;
+  private updateSound(s: Session, dt: number): void {
     const w = s.world;
     const ch = s.chapter;
     this.audio.ambience({
@@ -581,6 +621,7 @@ const BLANK_LOOK = {
   ripple: 0,
   blurFar: 0,
   blurMid: 0,
+  blurPlay: 0,
   blurFg: 0,
   bloom: 0,
   bloomWide: 0,

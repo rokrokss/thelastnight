@@ -2,6 +2,7 @@ import { paintTops } from '../art/scenes/tops';
 import type { Chapter } from '../game/chapter';
 import type { Director } from '../game/director';
 import { LevelBuilder, type LevelData } from '../game/level';
+import { both, single } from './shots';
 
 const H = 560;
 const W = 3600;
@@ -184,21 +185,37 @@ export const tops: Chapter = {
       if (d.flag('tops.t.tr6')) d.pose('jin', 'crouch');
     }
     d.objective(relay ? 'Run for the cable car' : 'Follow Jin to the water tower');
+    if (relay) {
+      // The pursuit is on: keep the picture and the camera on edge.
+      d.heat(1);
+      d.mood({ vignette: 0.18, saturation: -0.14, aberration: 0.008 }, 0);
+    }
   },
 
   async intro(d) {
     d.lock();
     await d.bars(true, 0);
+    // Open high over the roofscape with the moon and skyline sharp, then come down to the two of them.
+    d.cut({ x: 430, y: 210, zoom: 1, rack: -1, roll: 0.012 });
     await d.wait(0.5);
     void d.fade(0, 2.2);
+    d.drift({ x: 300, y: 330, zoom: 1.06, rack: -0.2, roll: 0 }, 6.2);
     await d.card('CHAPTER TWO', 'THE TOPS', 'The roofs belong to the children.');
+    d.drift({ on: ['sol', 'jin'], fit: true, dy: -8, rack: 0 }, 2);
     await d.walk('sol', 132, 34);
     d.faceEachOther('jin');
     await d.say('jin', 'Rule one. If I jump, you jump.');
+    single(d, 'jin', 2);
     await d.say('jin', 'Rule two. If I get small, you get small. The Listeners only like tall things.');
+    single(d, 'sol');
     await d.say('sol', 'What is rule three?');
+    both(d, 'jin');
     await d.say('jin', 'There is no rule three. Two is already a lot.');
-    void d.walk('jin', 270, 112);
+    // She bolts, and for a beat the camera goes after her.
+    void d.walk('jin', 270, 112).catch(() => undefined);
+    d.drift({ on: 'jin', zoom: 1.15, dx: 50 }, 1.5, 'in');
+    await d.wait(1.3);
+    d.release(1.4);
     await d.bars(false);
     d.unlock();
     d.objective('Follow Jin to the water tower');
@@ -208,17 +225,20 @@ export const tops: Chapter = {
   triggers: {
     async tr1(d) {
       d.bark('jin', 'Little gaps you just jump!', 3);
+      d.glance({ on: 'jin', zoom: 1.02 }, 1.4, 0.5);
       await jinRun(d, [['walk', 288], ['hop', 360, 430], ['walk', 610]]);
     },
     async tr2(d) {
       d.bark('jin', 'This one is high. Catch it with your hands and pull.', 4.5);
       d.toast('Jump and hold toward a ledge to grab it.  UP to pull yourself over.');
+      d.glance({ on: 'jin', zoom: 1.02, dy: -20 }, 1.6, 0.5);
       await jinRun(d, [['walk', 628], ['hop', 706, 398, 34], ['walk', 760]]);
       if (!d.flag('tops.t.tr3b')) d.pose('jin', 'crouch');
     },
     tr3(d) {
       d.bark('jin', 'Listener! Get in the doorway and get small.', 4.5);
       d.toast('Hold DOWN in a doorway or behind cover to hide.');
+      d.glance({ on: 'd1', zoom: 1, dy: 46 }, 1.8, 0.55);
     },
     async tr3b(d) {
       d.pose('jin', null);
@@ -227,14 +247,19 @@ export const tops: Chapter = {
     },
     async tr4(d) {
       d.bark('jin', 'The plank is good. Mostly.', 3);
+      // Look down the plank and into the drop under it.
+      d.glance({ x: 1292, y: 450, zoom: 1.05 }, 1.6, 0.6);
       await jinRun(d, [['walk', 1540]]);
     },
     async tr5(d) {
       d.bark('jin', 'Big one. Use the box.', 3);
+      d.glance({ on: 'jin', zoom: 1.02, dy: -24 }, 1.6, 0.5);
       await jinRun(d, [['walk', 1548], ['hop', 1570, 400, 16], ['hop', 1650, 366, 30], ['walk', 1870]]);
     },
     async tr6(d) {
       d.bark('jin', 'There. Gran says it has not held water since before she was born.', 5);
+      // The tower: tilt up to it with the focus running deep.
+      d.glance({ x: 2211, y: 286, zoom: 1, rack: -0.35 }, 3, 0.85);
       await jinRun(d, [['walk', 1886], ['hop', 1956, 386], ['walk', 2030]]);
       d.pose('jin', 'crouch');
       d.bark('jin', 'One more Listener. I am staying small. Ladder is on the far leg.', 5);
@@ -254,9 +279,16 @@ export const tops: Chapter = {
       }
       d.lock();
       w.stealthOff = true;
+      // Made it: time stretches for a breath as she hits the car.
+      d.cut({ on: 'sol', zoom: 1.6, dy: -6, roll: 0.03 });
+      await d.slowmo(0.3, 0.5);
+      d.heat(0);
+      d.calm(2.5);
       await d.bars(true);
       d.sfx('switch');
       w.mover('gondola').active = true;
+      // Pull away as the car swings out over the city, the focus going to the skyline.
+      d.drift({ on: 'sol', zoom: 1, dx: 80, dy: 34, roll: 0, rack: -0.6 }, 6, 'out');
       await d.say('mun', 'I have you on the cable. Breathe. Two relays up.');
       await d.say('sol', 'The kid?');
       await d.say('mun', 'Home before her gran woke, I would bet my licence. If I had one.');
@@ -277,6 +309,7 @@ export const tops: Chapter = {
       await d.walk('sol', 2250, 30);
       d.face('sol', 1);
       d.pose('sol', 'kneel');
+      d.drift({ on: 'sol', zoom: 1.75, dx: 12, dy: -6 }, 1.4);
       d.sfx('switch');
       await d.wait(0.5);
       await d.say('mun', 'This one drifts in two directions. Find the pitch, then bring the strength up to meet it.');
@@ -286,20 +319,26 @@ export const tops: Chapter = {
       d.sfx('relay');
       d.flash(0.25, 0.8);
       d.shake(0.25);
+      // Wide: the old tower against the sky, slowly closing.
+      d.cut({ x: 2211, y: 292, zoom: 1, rack: -0.3 });
+      d.drift({ x: 2211, y: 262, zoom: 1.14, rack: 0 }, 4, 'out');
       d.pose('sol', null);
-      await d.wait(0.8);
+      await d.wait(0.9);
       await d.say('mun', 'Two. The Lanes and the Tops are talking to each other. Can you hear it? That is a network.');
+      // The Warden: a hard cut to the big light swinging in, the horizon tipped.
       for (const id of ['d1', 'd2', 'd3']) w.drone(id).active = false;
-      d.sfx('caught', 0.5);
-      d.shake(0.5);
-      d.focus(1980, 300, 1, 1.4);
-      await d.wait(1.4);
       const sw = w.drone('sweeper');
       sw.reset(1700, 236);
       sw.active = true;
+      d.sfx('caught', 0.5);
+      d.shake(0.5);
+      d.cut({ on: 'sweeper', zoom: 1, dx: 60, dy: 70, roll: -0.045 });
+      d.mood({ vignette: 0.18, saturation: -0.14, aberration: 0.008 }, 0.25);
+      d.heat(1);
+      await d.wait(1.5);
+      d.cut({ on: 'sol', zoom: 1.75, dx: 0, dy: -6, roll: 0.02 });
       await d.say('sol', 'What is that?');
       await d.say('mun', 'A Warden. They sent the big light. Sol, you cannot hide from that one.');
-      d.release();
       const jin = w.actor('jin');
       d.bark('jin', 'Run for the cable car! Do not look at it! Go!', 4);
       void d
@@ -309,6 +348,7 @@ export const tops: Chapter = {
           jin.visible = false;
         })
         .catch(() => undefined);
+      d.release(0.8);
       await d.bars(false);
       d.unlock();
       d.set('tops.relay', 1);

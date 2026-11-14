@@ -1,9 +1,6 @@
-import { VIEW_H, VIEW_W } from '../core/constants';
 import type { Controls } from '../core/input';
 import {
   approach,
-  clamp,
-  damp,
   lerp,
   pointInRect,
   rectsOverlap,
@@ -11,8 +8,8 @@ import {
   type Rect,
 } from '../core/math';
 import type { Anim } from '../art/puppet';
+import { Camera } from './camera';
 import type {
-  CamZone,
   CheckpointDef,
   DroneDef,
   InteractDef,
@@ -676,81 +673,6 @@ export class Drone {
 }
 
 // ---------------------------------------------------------------------------
-// Camera
-// ---------------------------------------------------------------------------
-export class Camera {
-  /** Top-left of the view in world px. */
-  x = 0;
-  y = 0;
-  zoom = 1;
-  shake = 0;
-  /** Cutscene override: centre the view here. */
-  focus: { x: number; y: number; zoom: number; rate: number } | null = null;
-  private look = 0;
-  private anchor = 0;
-
-  private target(w: World): [number, number, number] {
-    const p = w.player;
-    if (this.focus) return [this.focus.x - VIEW_W / 2, this.focus.y - VIEW_H / 2, this.focus.zoom];
-    let zone: CamZone | null = null;
-    for (const z of w.level.camZones) {
-      if (pointInRect(p.cx, p.feet - 8, z)) {
-        zone = z;
-        break;
-      }
-    }
-    const tx = p.cx + this.look + (zone?.offX ?? 0) - VIEW_W / 2;
-    let ty = zone?.lockY ?? this.anchor - 182 + (zone?.offY ?? 0);
-    if (zone?.lockY !== undefined) ty = zone.lockY;
-    return [tx, ty, zone?.zoom ?? 1];
-  }
-
-  /** Keep the visible (zoomed) region inside the level. */
-  private limit(w: World): void {
-    const mx = (VIEW_W / 2) * (1 - 1 / this.zoom);
-    const my = (VIEW_H / 2) * (1 - 1 / this.zoom);
-    this.x = clamp(this.x, -mx, Math.max(-mx, w.level.width - VIEW_W + mx));
-    this.y = clamp(this.y, -my, Math.max(-my, w.level.height - VIEW_H + my));
-  }
-
-  snap(w: World): void {
-    const p = w.player;
-    this.anchor = p.feet;
-    this.look = p.facing * 30;
-    const [tx, ty, tz] = this.target(w);
-    this.x = tx;
-    this.y = ty;
-    this.zoom = tz;
-    this.limit(w);
-  }
-
-  update(dt: number, w: World): void {
-    const p = w.player;
-    const moving = Math.abs(p.vx) > 20;
-    this.look = damp(this.look, moving ? p.facing * 38 : p.facing * 16, 1.6, dt);
-    // Follow height changes only once the player has settled or left the frame's comfort band.
-    if (p.onGround || p.state === 'ladder' || p.state === 'hang' || p.state === 'climb') {
-      this.anchor = damp(this.anchor, p.state === 'hang' || p.state === 'climb' ? p.y + 20 : p.feet, 6, dt);
-    } else if (p.feet > this.anchor + 30) {
-      this.anchor = damp(this.anchor, p.feet - 30, 8, dt);
-    } else if (p.feet < this.anchor - 64) {
-      this.anchor = damp(this.anchor, p.feet + 64, 8, dt);
-    }
-    const [tx, ty, tz] = this.target(w);
-    const rate = this.focus ? this.focus.rate : 4.2;
-    this.x = damp(this.x, tx, rate, dt);
-    this.y = damp(this.y, ty, this.focus ? rate : 3.2, dt);
-    this.zoom = damp(this.zoom, tz, this.focus ? rate : 1.8, dt);
-    this.limit(w);
-    this.shake = Math.max(0, this.shake - dt * 2.2);
-  }
-
-  addShake(amount: number): void {
-    this.shake = Math.min(1.5, Math.max(this.shake, amount));
-  }
-}
-
-// ---------------------------------------------------------------------------
 // World
 // ---------------------------------------------------------------------------
 export interface Pickup extends PickupDef {
@@ -782,6 +704,8 @@ export class World {
   stealthOff = false;
   /** Highest drone suspicion this frame, 0..1. */
   detect = 0;
+  /** Story-set urgency, 0..1 (a pursuit, a storm): the camera and score lean on it. */
+  heat = 0;
   failed: FailReason | null = null;
   /** Story-driven switches the scenery reacts to (relays lit, lamps on). */
   signals: Record<string, number> = {};

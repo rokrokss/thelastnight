@@ -80,6 +80,7 @@ uniform vec2 uView;
 uniform vec2 uTexSize;
 uniform float uPad;
 uniform float uZoom;
+uniform vec2 uRot;
 uniform vec2 uOffPlay;
 uniform vec2 uLpos;
 uniform float uRadius;
@@ -92,7 +93,8 @@ in vec2 vNdc;
 out vec4 o;
 void main(){
   vec2 vp = vec2(vNdc.x * 0.5 + 0.5, 0.5 - vNdc.y * 0.5) * uView;
-  vec2 p = (vp - uView * 0.5) / uZoom + uView * 0.5;
+  vec2 c = (vp - uView * 0.5) / uZoom;
+  vec2 p = vec2(c.x * uRot.x - c.y * uRot.y, c.x * uRot.y + c.y * uRot.x) + uView * 0.5;
   vec2 d = p - uLpos;
   float dist = length(d);
   float a = clamp(1.0 - dist / uRadius, 0.0, 1.0);
@@ -134,13 +136,15 @@ uniform sampler2D uG;
 uniform vec2 uView;
 uniform float uPad;
 uniform float uZoom;
+uniform vec2 uRot;
 uniform vec2 uOff;
 in vec2 vUv;
 layout(location = 0) out vec4 oC;
 layout(location = 1) out vec4 oG;
 void main(){
   vec2 vp = vec2(vUv.x, 1.0 - vUv.y) * uView;
-  vec2 p = (vp - uView * 0.5) / uZoom + uView * 0.5 + uOff + uPad;
+  vec2 c = (vp - uView * 0.5) / uZoom;
+  vec2 p = vec2(c.x * uRot.x - c.y * uRot.y, c.x * uRot.y + c.y * uRot.x) + uView * 0.5 + uOff + uPad;
   vec2 uv = vec2(p.x / uTexSize.x, 1.0 - p.y / uTexSize.y);
   oC = sharpTex(uC, uv);
   oG = sharpTex(uG, uv);
@@ -209,9 +213,14 @@ uniform sampler2D uMask;
 uniform sampler2D uFgC;
 uniform sampler2D uFgG;
 uniform sampler2D uLight;
+uniform sampler2D uPlayRC;
+uniform sampler2D uPlayRG;
+uniform float uPlayPre;
+uniform float uFgFade;
 uniform vec2 uView;
 uniform float uPad;
 uniform float uZoom;
+uniform vec2 uRot;
 uniform float uTime;
 uniform vec2 uOffPlay;
 uniform vec3 uAmbFar;
@@ -230,10 +239,12 @@ layout(location = 1) out vec4 oG;
 
 vec2 screenToScene(vec2 uv){
   vec2 vp = vec2(uv.x, 1.0 - uv.y) * uView;
-  return (vp - uView * 0.5) / uZoom + uView * 0.5;
+  vec2 c = (vp - uView * 0.5) / uZoom;
+  return vec2(c.x * uRot.x - c.y * uRot.y, c.x * uRot.y + c.y * uRot.x) + uView * 0.5;
 }
 vec2 sceneToScreen(vec2 sp){
-  vec2 vp = (sp - uView * 0.5) * uZoom + uView * 0.5;
+  vec2 c = sp - uView * 0.5;
+  vec2 vp = vec2(c.x * uRot.x + c.y * uRot.y, -c.x * uRot.y + c.y * uRot.x) * uZoom + uView * 0.5;
   return vec2(vp.x / uView.x, 1.0 - vp.y / uView.y);
 }
 vec2 sceneToTex(vec2 sp){
@@ -255,9 +266,17 @@ void compose(vec2 uv, out vec3 col, out vec3 glow){
   float fa = clamp(uFogMid * (0.5 + 1.0 * fn), 0.0, 1.0);
   col = mix(col, uFogColor, fa);
   glow *= 1.0 - 0.45 * fa;
-  vec2 tuv = sceneToTex(sp);
-  vec4 p = sharpTex(uPlayC, tuv);
-  vec4 pg = sharpTex(uPlayG, tuv);
+  vec4 p;
+  vec4 pg;
+  if (uPlayPre > 0.5) {
+    // Out of focus: the play layer arrives already resolved and blurred.
+    p = texture(uPlayRC, uv);
+    pg = texture(uPlayRG, uv);
+  } else {
+    vec2 tuv = sceneToTex(sp);
+    p = sharpTex(uPlayC, tuv);
+    pg = sharpTex(uPlayG, tuv);
+  }
   vec3 L = texture(uLight, uv).rgb;
   col = col * (1.0 - p.a) + p.rgb * (uAmbPlay + L) + pg.rgb;
   glow = glow * (1.0 - pg.a) + pg.rgb;
@@ -307,8 +326,9 @@ void main(){
   float gfa = uGroundFog.x * smoothstep(uGroundFog.y, uGroundFog.z, sp.y) * (0.35 + 1.1 * gfn);
   col = mix(col, uFogColor * 0.75 + L * 0.45, clamp(gfa, 0.0, 0.92));
 
-  vec4 g = texture(uFgC, vUv);
-  vec4 gg = texture(uFgG, vUv);
+  // Foreground thins out as a push-in carries the lens past it.
+  vec4 g = texture(uFgC, vUv) * uFgFade;
+  vec4 gg = texture(uFgG, vUv) * uFgFade;
   col = col * (1.0 - g.a) + g.rgb * (uAmbFg + L * 0.3) + gg.rgb;
   glow = glow * (1.0 - gg.a) + gg.rgb;
 
@@ -376,6 +396,7 @@ uniform vec3 uShadowTint;
 uniform vec3 uHighTint;
 uniform vec4 uFade;
 uniform float uFlash;
+uniform float uWipe;
 in vec2 vUv;
 out vec4 o;
 float hash21(vec2 p){
@@ -412,6 +433,12 @@ void main(){
   col += g * uGrain;
   col = mix(col, vec3(1.0), uFlash);
   col = mix(col, uFade.rgb, uFade.a);
+  if (uWipe > 0.0) {
+    // A soft dark shape crossing the lens: fully covers the frame at 0.5.
+    float wc = mix(-0.95, 1.95, uWipe);
+    float wx = vUv.x + (vUv.y - 0.5) * 0.18;
+    col *= smoothstep(0.55, 0.75, abs(wx - wc));
+  }
   float bar = step(vUv.y, uLetterbox) + step(1.0 - uLetterbox, vUv.y);
   col *= 1.0 - clamp(bar, 0.0, 1.0);
   o = vec4(max(col, 0.0), 1.0);

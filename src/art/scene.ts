@@ -69,6 +69,7 @@ export const DEFAULT_LOOK: Look = {
   ripple: 2.2,
   blurFar: 2.0,
   blurMid: 0.8,
+  blurPlay: 0,
   blurFg: 4.0,
   bloom: 0.5,
   bloomWide: 1.0,

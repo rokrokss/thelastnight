@@ -1,6 +1,7 @@
 import { clamp01, easeInOut } from '../core/math';
 import type { Anim } from '../art/puppet';
-import type { Cine } from './view';
+import type { Ease, ShotSpec } from './camera';
+import type { Cine, Mood } from './view';
 import type { World } from './world';
 
 /** Who can speak. `radio` voices come over Sol's set instead of from a body in the scene. */
@@ -86,7 +87,15 @@ interface Tween {
 export class Director {
   readonly world: World;
   readonly flags: Record<string, number>;
-  readonly cine: Cine = { letterbox: 0, fade: [0, 0, 0, 0], flash: 0 };
+  readonly cine: Cine = {
+    letterbox: 0,
+    fade: [0, 0, 0, 0],
+    flash: 0,
+    wipe: 0,
+    mood: { vignette: 0, saturation: 0, exposure: 0, aberration: 0, bloom: 0 },
+  };
+  /** World speed (1 = normal). The session applies it; slowmo() animates it. */
+  timeScale = 1;
   alive = true;
   /** Set when a script asks to leave the chapter. */
   exit: { next: string } | null = null;
@@ -98,6 +107,7 @@ export class Director {
   private sound: SoundPort;
   private tweens: Tween[] = [];
   private chains = new Map<string, Promise<void>>();
+  private moodGen = 0;
   private onFlag: (() => void) | null;
 
   constructor(world: World, flags: Record<string, number>, ui: Presenter, sound: SoundPort, onFlag?: () => void) {
@@ -292,15 +302,105 @@ export class Director {
     );
   }
 
-  // ---- camera and picture ----
-  focus(x: number, y: number, zoom = 1, rate = 2.2): void {
-    this.world.camera.focus = { x, y, zoom, rate };
+  // ---- camera ----
+  /** Cut straight to a shot. */
+  cut(shot: ShotSpec): void {
+    if (this.alive) this.world.camera.cut(this.world, shot);
   }
-  release(): void {
-    this.world.camera.focus = null;
+
+  /** Travel to a shot and wait for the camera to arrive. */
+  move(shot: ShotSpec, seconds: number, ease: Ease = 'inOut'): Promise<void> {
+    this.check();
+    return this.guard(new Promise<void>((done) => this.world.camera.move(shot, seconds, ease, done)));
   }
+
+  /** Start a camera move and carry on without waiting for it. */
+  drift(shot: ShotSpec, seconds: number, ease: Ease = 'inOut'): void {
+    if (this.alive) this.world.camera.move(shot, seconds, ease);
+  }
+
+  /**
+   * Lean the gameplay camera toward something for a moment, then let go.
+   * The player keeps control throughout.
+   */
+  glance(shot: ShotSpec, hold = 2.5, weight = 0.7): void {
+    if (!this.alive) return;
+    const cam = this.world.camera;
+    cam.move({ ...shot, weight }, 1.1);
+    const mine = cam.serial;
+    this.world.after(1.1 + hold, () => {
+      if (this.alive && cam.serial === mine) cam.release(1.4);
+    });
+  }
+
+  /** Give the camera back to gameplay. */
+  release(seconds = 1.2): void {
+    if (this.alive) this.world.camera.release(seconds);
+  }
+
   shake(amount: number): void {
     this.world.camera.addShake(amount);
+  }
+
+  /** How urgent things are, 0..1: tightens and unsettles the gameplay camera. */
+  heat(v: number): void {
+    this.world.heat = v;
+  }
+
+  /** Slow the world for a beat, then let it run again. */
+  async slowmo(scale: number, seconds: number): Promise<void> {
+    this.check();
+    await this.guard(
+      this.tween(0.12, (u) => {
+        this.timeScale = 1 + (scale - 1) * u;
+      }),
+    );
+    await this.guard(this.tween(seconds, () => undefined));
+    await this.guard(
+      this.tween(0.35, (u) => {
+        this.timeScale = scale + (1 - scale) * u;
+      }),
+    );
+  }
+
+  /**
+   * A dark shape crosses the lens. Resolves at the moment the frame is fully
+   * covered, so the caller can cut behind it; the shape then clears by itself.
+   */
+  async wipe(): Promise<void> {
+    this.check();
+    await this.guard(
+      this.tween(0.32, (u) => {
+        this.cine.wipe = Math.max(0.001, 0.5 * easeInOut(u));
+      }),
+    );
+    void this.tween(0.32, (u) => {
+      this.cine.wipe = u >= 1 ? 0 : 0.5 + 0.5 * easeInOut(u);
+    });
+  }
+
+  /** Lay a mood over the picture (offsets on the chapter's look), easing over `seconds`. */
+  mood(to: Partial<Mood>, seconds = 1): void {
+    if (!this.alive) return;
+    const from = { ...this.cine.mood };
+    const target: Mood = { ...from, ...to };
+    // The newest mood wins: an older one still easing must not drag the picture back.
+    const gen = ++this.moodGen;
+    void this.tween(seconds, (u) => {
+      if (gen !== this.moodGen) return;
+      const k = easeInOut(u);
+      const m = this.cine.mood;
+      m.vignette = from.vignette + (target.vignette - from.vignette) * k;
+      m.saturation = from.saturation + (target.saturation - from.saturation) * k;
+      m.exposure = from.exposure + (target.exposure - from.exposure) * k;
+      m.aberration = from.aberration + (target.aberration - from.aberration) * k;
+      m.bloom = from.bloom + (target.bloom - from.bloom) * k;
+    });
+  }
+
+  /** Clear any mood. */
+  calm(seconds = 1.2): void {
+    this.mood({ vignette: 0, saturation: 0, exposure: 0, aberration: 0, bloom: 0 }, seconds);
   }
 
   bars(on: boolean, dur = 0.7): Promise<void> {

@@ -37,6 +37,8 @@ export interface Look {
   /** Depth-of-field blur per group, in low-res pixels. */
   blurFar: number;
   blurMid: number;
+  /** Normally 0 (the play layer is the focal plane); raised during rack focus. */
+  blurPlay: number;
   blurFg: number;
   bloom: number;
   bloomWide: number;
@@ -53,7 +55,18 @@ export interface Look {
 
 export interface FrameParams {
   time: number;
+  /** Magnification of the play layer. */
   zoom: number;
+  /** Magnification of the other depth groups: a push-in moves near layers more than far ones. */
+  zoomFar: number;
+  zoomMid: number;
+  zoomFg: number;
+  /** 1 = foreground fully present; fades as the lens passes through it. */
+  fgFade: number;
+  /** Camera roll in radians. */
+  roll: number;
+  /** Wipe transition progress, 0 (off) to 1. */
+  wipe: number;
   /** Fractional part of the camera position; the play canvas is drawn at the integer part. */
   fracX: number;
   fracY: number;
@@ -109,7 +122,7 @@ export class Renderer {
   private ow = 0;
   private oh = 0;
   private lightRT: Target | null = null;
-  private groups: Record<'far' | 'mid' | 'fg', GroupTargets> | null = null;
+  private groups: Record<'far' | 'mid' | 'play' | 'fg', GroupTargets> | null = null;
   private sceneRT: Target | null = null;
   private bloom: Target[] = [];
   private streak: Target[] = [];
@@ -200,7 +213,7 @@ export class Renderer {
     const hh = Math.ceil(h / 2);
     this.lightRT = makeTarget(gl, hw, hh, 1, this.hdr);
     const grp = (): GroupTargets => ({ a: makeTarget(gl, hw, hh, 2, false), b: makeTarget(gl, hw, hh, 2, false) });
-    this.groups = { far: grp(), mid: grp(), fg: grp() };
+    this.groups = { far: grp(), mid: grp(), play: grp(), fg: grp() };
     this.sceneRT = makeTarget(gl, w, h, 2, this.hdr);
     this.bloom = [];
     let bw = hw;
@@ -240,6 +253,8 @@ export class Renderer {
     if (this.lost || !this.sceneRT || !this.lightRT || !this.groups) return;
     const gl = this.gl;
     const look = fp.look;
+    const rc = Math.cos(fp.roll);
+    const rs = Math.sin(fp.roll);
     gl.bindVertexArray(this.vao);
     gl.disable(gl.BLEND);
 
@@ -263,11 +278,15 @@ export class Renderer {
       gl.uniform2f(u.uTexSize ?? null, TEX_W, TEX_H);
       gl.uniform1f(u.uPad ?? null, PAD);
       gl.uniform1f(u.uZoom ?? null, fp.zoom);
+      gl.uniform2f(u.uRot ?? null, rc, rs);
       gl.uniform2f(u.uOffPlay ?? null, fp.fracX, fp.fracY);
       const z = fp.zoom;
       for (const L of fp.lights) {
-        const sx = (L.x - VIEW_W / 2) * z + VIEW_W / 2;
-        const sy = (L.y - VIEW_H / 2) * z + VIEW_H / 2;
+        // Scene → screen: undo the roll, then scale about the centre.
+        const lx = L.x - VIEW_W / 2;
+        const ly = L.y - VIEW_H / 2;
+        const sx = (lx * rc + ly * rs) * z + VIEW_W / 2;
+        const sy = (-lx * rs + ly * rc) * z + VIEW_H / 2;
         const R = L.r * z;
         const x0 = Math.max(-1, ((sx - R) / VIEW_W) * 2 - 1);
         const x1 = Math.min(1, ((sx + R) / VIEW_W) * 2 - 1);
@@ -293,13 +312,16 @@ export class Renderer {
     gl.disable(gl.BLEND);
 
     // ---- depth groups: resolve to screen space, then blur for depth of field ----
-    const blurs: ['far' | 'mid' | 'fg', WebGLTexture, WebGLTexture, number][] = [
-      ['far', this.tex.farC, this.tex.farG, look.blurFar],
-      ['mid', this.tex.midC, this.tex.midG, look.blurMid],
-      ['fg', this.tex.fgC, this.tex.fgG, look.blurFg],
+    type GroupName = 'far' | 'mid' | 'play' | 'fg';
+    const playPre = look.blurPlay > 0.05;
+    const blurs: [GroupName, WebGLTexture, WebGLTexture, number, number][] = [
+      ['far', this.tex.farC, this.tex.farG, look.blurFar, fp.zoomFar],
+      ['mid', this.tex.midC, this.tex.midG, look.blurMid, fp.zoomMid],
+      ['fg', this.tex.fgC, this.tex.fgG, look.blurFg, fp.zoomFg],
     ];
-    const resolved = {} as Record<'far' | 'mid' | 'fg', Target>;
-    for (const [name, tc, tg, blurPx] of blurs) {
+    if (playPre) blurs.push(['play', this.tex.playC, this.tex.playG, look.blurPlay, fp.zoom]);
+    const resolved = {} as Record<GroupName, Target>;
+    for (const [name, tc, tg, blurPx, zoom] of blurs) {
       const g = this.groups[name];
       this.bind(g.a);
       {
@@ -310,14 +332,17 @@ export class Renderer {
         gl.uniform2f(u.uView ?? null, VIEW_W, VIEW_H);
         gl.uniform2f(u.uTexSize ?? null, TEX_W, TEX_H);
         gl.uniform1f(u.uPad ?? null, PAD);
-        gl.uniform1f(u.uZoom ?? null, fp.zoom);
-        gl.uniform2f(u.uOff ?? null, 0, 0);
-        gl.uniform1f(u.uPxScale ?? null, (g.a.w / VIEW_W) * fp.zoom);
+        gl.uniform1f(u.uZoom ?? null, zoom);
+        gl.uniform2f(u.uRot ?? null, rc, rs);
+        // Only the play layer is drawn at whole pixels and needs the sub-pixel remainder.
+        if (name === 'play') gl.uniform2f(u.uOff ?? null, fp.fracX, fp.fracY);
+        else gl.uniform2f(u.uOff ?? null, 0, 0);
+        gl.uniform1f(u.uPxScale ?? null, (g.a.w / VIEW_W) * zoom);
         this.full();
       }
       let cur = g.a;
       let other = g.b;
-      const radius = blurPx * (g.a.w / VIEW_W) * fp.zoom;
+      const radius = blurPx * (g.a.w / VIEW_W) * zoom;
       if (radius > 0.3) {
         const iters = radius > 7 ? 2 : 1;
         const r = radius / Math.sqrt(iters);
@@ -351,6 +376,12 @@ export class Renderer {
       this.sampler(7, resolved.fg.tex[0]!, u.uFgC);
       this.sampler(8, resolved.fg.tex[1]!, u.uFgG);
       this.sampler(9, this.lightRT.tex[0]!, u.uLight);
+      const playR = playPre ? resolved.play : resolved.far;
+      this.sampler(10, playR.tex[0]!, u.uPlayRC);
+      this.sampler(11, playR.tex[1]!, u.uPlayRG);
+      gl.uniform1f(u.uPlayPre ?? null, playPre ? 1 : 0);
+      gl.uniform1f(u.uFgFade ?? null, fp.fgFade);
+      gl.uniform2f(u.uRot ?? null, rc, rs);
       gl.uniform2f(u.uView ?? null, VIEW_W, VIEW_H);
       gl.uniform2f(u.uTexSize ?? null, TEX_W, TEX_H);
       gl.uniform1f(u.uPad ?? null, PAD);
@@ -448,6 +479,7 @@ export class Renderer {
       gl.uniform3fv(u.uHighTint ?? null, look.highTint);
       gl.uniform4fv(u.uFade ?? null, fp.fade);
       gl.uniform1f(u.uFlash ?? null, fp.flash);
+      gl.uniform1f(u.uWipe ?? null, fp.wipe);
       this.full();
     }
   }

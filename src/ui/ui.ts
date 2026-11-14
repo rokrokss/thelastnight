@@ -140,9 +140,29 @@ export class UI implements Presenter {
     this.loadingEl.classList.toggle('hidden', !on);
   }
 
+  /** What the UI is waiting on from the player, if anything. */
+  get waiting(): 'credits' | 'menu' | 'tuner' | 'choice' | 'say' | null {
+    if (this.creditsS) return 'credits';
+    if (this.menus.length) return 'menu';
+    if (this.tuner) return 'tuner';
+    if (this.choice) return 'choice';
+    if (this.say_) return 'say';
+    return null;
+  }
+
   /** True while the UI owns the controls (dialogue, choices, tuning, menus). */
   get blocking(): boolean {
-    return !!(this.say_ || this.choice || this.tuner || this.menus.length || this.creditsS);
+    return this.waiting !== null;
+  }
+
+  /** Highlighted dialogue choice, or -1 (automation and tests). */
+  get choiceIndex(): number {
+    return this.choice ? this.choice.idx : -1;
+  }
+
+  /** The tuning model while the scope is open (automation and tests). */
+  get tuning(): Tuner | null {
+    return this.tuner ? this.tuner.model : null;
   }
 
   get menuOpen(): boolean {

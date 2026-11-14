@@ -220,16 +220,20 @@ export const spire: Chapter = {
   async intro(d) {
     d.lock();
     await d.bars(true, 0);
-    d.focus(320, 2130, 1, 100);
+    // Start well up the tower in the storm, tipped by the wind, and crane all the way down to her.
+    d.cut({ x: 330, y: 1780, zoom: 1, rack: -0.5, roll: 0.035 });
     await d.wait(0.5);
     void d.fade(0, 2.2);
+    d.drift({ x: 300, y: 2150, zoom: 1, rack: 0, roll: 0 }, 7);
     await d.card('CHAPTER FOUR', 'THE SPIRE', 'They built it around her transmitter.');
-    d.focus(180, 2240, 1, 0.9);
-    await d.wait(2.2);
-    d.release();
+    await d.move({ on: 'sol', zoom: 1.4, dx: 40, dy: -24, rack: 0, roll: 0 }, 2.4);
     await d.say('sol', 'Six hundred metres. In this.');
+    // Follow her eyes up the steel while Mun talks.
+    d.drift({ on: 'sol', zoom: 1, dx: 110, dy: -90, rack: -0.4 }, 4.5);
     await d.say('mun', 'My old rig is still in the crown. They could never get it out, so they built their Spire around it and pretended it was not there.');
+    d.drift({ on: 'sol', zoom: 1.65, dx: 10, dy: -6, rack: 0 }, 1.6);
     await d.say('mun', 'Climb, Sol. The tide turns in forty minutes.');
+    d.release(1.4);
     await d.bars(false);
     d.unlock();
     d.objective('Climb the Spire');
@@ -239,6 +243,8 @@ export const spire: Chapter = {
   triggers: {
     face(d) {
       d.bark('mun', 'The ladder is gone above you. You will have to go out on the face. Wait for the gusts to pass.', 6);
+      // Out to the ledges hanging over the drop.
+      d.glance({ x: 480, y: 2000, zoom: 1, roll: 0.025 }, 2.8, 0.75);
     },
     mid(d) {
       if (d.flag('choice.cha') === 1) {
@@ -249,6 +255,7 @@ export const spire: Chapter = {
         d.bark('dispatch', 'All Wardens to the Spire. Unlicensed carrier ascending. Scan every floor.', 6);
       }
       d.toast('Scanning lights sweep the floors.  Shield plates will hide you: hold DOWN behind one.');
+      d.glance({ on: 'd1', zoom: 1, dx: 60, roll: -0.02 }, 2.6, 0.6);
     },
     async clear(d) {
       const w = d.world;
@@ -263,6 +270,8 @@ export const spire: Chapter = {
       }
       w.weather.rain = 0;
       await d.wait(1.2);
+      // Out of the cloud: open the frame right up and let the focus go to the sky.
+      d.glance({ on: 'sol', zoom: 1, dy: -46, rack: -0.5, roll: 0 }, 10, 0.9);
       d.bark('sol', '...I am above it. Mun, there are stars.', 4);
       await d.wait(4.5);
       d.bark('mun', 'There always were. That shimmer over them is what carries us, at night. We just stopped looking up.', 7);
@@ -282,16 +291,23 @@ export const spire: Chapter = {
       w.thing('lift').enabled = false;
       lift.active = true;
       d.shake(0.2);
+      // Tight on her as the platform jerks into motion, then let the tower fall away around her.
+      d.cut({ on: 'sol', zoom: 1.9, dx: 0, dy: -5, roll: 0, rack: 0 });
       await d.wait(1.0);
+      d.drift({ on: 'sol', zoom: 1, dx: 70, dy: 24, rack: -0.3 }, 7);
       await d.say('mun', 'Eleven years ago tonight there was another surge. Smaller. A harbour pilot told me before he told anyone.');
       await d.say('mun', 'I read the warning out street by street, in alphabetical order, so people would know when to listen for theirs.');
+      // The night they cut her off: come back in close for it.
+      d.drift({ on: 'sol', zoom: 2, dx: 0, dy: -5, rack: 0 }, 3);
       await d.say('mun', 'Meridian cut my carrier at Marrow Lane. I never got to the P’s.');
       await d.say('sol', '...Pier Street.');
+      d.drift({ on: 'sol', zoom: 1.25, dx: 30, dy: -24 }, 3.5);
       await d.say('mun', 'I have had eleven years to finish that list. Tonight you are going to let me.');
       while (!lift.arrived) await d.wait(0.2);
       d.shake(0.15);
       d.set('spire.lift', 1);
       w.stealthOff = false;
+      d.release(1.2);
       await d.bars(false);
       d.unlock();
       d.mark('cp_mid');
@@ -305,6 +321,8 @@ export const spire: Chapter = {
       await d.walk('sol', 282, 30);
       d.face('sol', -1);
       d.pose('sol', 'kneel');
+      // Push in on her at the old valve rig.
+      d.drift({ on: 'sol', zoom: 1.9, dx: -14, dy: -4, rack: 0, roll: 0 }, 1.8);
       d.sfx('switch');
       await d.wait(0.6);
       await d.say('sol', 'Valves. Hand-wound coils. This is older than the tower.');
@@ -319,9 +337,17 @@ export const spire: Chapter = {
       d.pose('sol', null);
       d.set('spire.main', 1);
       d.music('dawn');
-      d.focus(320, 250, 1, 0.5);
-      await d.wait(2.6);
+      // She is on the air: cut wide and crane up the masthead as the rings go out.
+      d.cut({ x: 320, y: 330, zoom: 1, rack: 0, roll: 0 });
+      d.mood({ bloom: 0.2, exposure: 0.06 }, 1.5);
+      await d.move({ x: 320, y: 140, zoom: 1.06 }, 3.6, 'out');
+      await d.wait(0.5);
+      // Back down to her behind a wipe.
+      await d.wipe();
+      d.cut({ on: 'sol', zoom: 1.5, dx: 14, dy: -6, rack: 0 });
       await d.say('mun', 'Four. Sol, you are on the air. The whole open band, from the Lanes to the water.');
+      // The question: close slowly on her while she decides.
+      d.drift({ on: 'sol', zoom: 2.15, dx: 0, dy: -5 }, 9, 'out');
       await d.say('mun', 'What do we send?');
       const pick = await d.choose([
         'Just the warning. Clear, and nobody’s name on it.',
@@ -338,16 +364,20 @@ export const spire: Chapter = {
         await d.say('mun', 'Every kitchen set a station. It will be chaos.');
         await d.say('sol', 'It will be loud. You said it used to be loud.');
       }
-      d.release();
+      // She crosses to the microphone: go with her, then come in close for the broadcast.
+      d.drift({ on: 'sol', zoom: 1.35, dx: 20, dy: -10 }, 1.6);
       d.face('sol', 1);
       await d.walk('sol', 346, 26);
       d.pose('sol', 'talk');
+      d.drift({ on: 'sol', zoom: 2.2, dx: 6, dy: -6 }, 5, 'out');
       await d.say('sol', pick === 1 ? 'This is Sol Han, on the open band, from the top of the Spire.' : 'This is the open band. This is not a test.');
       await d.say('sol', 'A storm surge will reach the harbour before dawn. If you live below Carver Hill, go up. Go now. Knock on doors.');
       d.pose('sol', null);
       d.sfx('static');
+      // Mun takes the air: leave Sol small on the deck and rise with the signal into the sky.
+      d.cut({ on: 'sol', zoom: 1.12, dx: 0, dy: -34, rack: 0 });
       await d.say('mun', 'This is Radio Magpie. I was reading you a list.');
-      d.focus(320, 120, 1, 0.35);
+      d.drift({ x: 320, y: 135, zoom: 1, rack: -0.9 }, 10);
       await d.say('mun', 'Marrow Lane. Needle Court. Old Quay.');
       await d.say('mun', 'Pier Street.');
       void d.fade(1, 3.2, [1, 0.96, 0.9]);

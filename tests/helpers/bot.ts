@@ -1,7 +1,12 @@
-import { ScriptedControls, type Action } from '../../src/core/input';
+import type { Action, Controls } from '../../src/core/input';
 import type { World } from '../../src/game/world';
 
 const ALL: Action[] = ['left', 'right', 'up', 'down', 'jump'];
+
+/** The buttons the autopilot presses: anything that can hold or release an action. */
+export interface Pad {
+  set(a: Action, on: boolean): void;
+}
 
 function oneWayUnder(w: World, x: number, feet: number): boolean {
   for (const o of w.level.oneWays) if (x >= o.x && x < o.x + o.w && Math.abs(o.y - feet) < 1.5) return true;
@@ -18,7 +23,7 @@ export function reached(w: World, tx: number, ty: number): boolean {
  * walls, grab and climb ledges, use ladders. If this can follow a route, a
  * player certainly can.
  */
-export function steer(w: World, c: ScriptedControls, tx: number, ty: number): void {
+export function steer(w: World, c: Pad, tx: number, ty: number): void {
   const p = w.player;
   const want = new Set<Action>();
   const dx = tx - p.cx;
@@ -50,12 +55,18 @@ export function steer(w: World, c: ScriptedControls, tx: number, ty: number): vo
   for (const a of ALL) c.set(a, want.has(a));
 }
 
-export function release(c: ScriptedControls): void {
+export function release(c: Pad): void {
   for (const a of ALL) c.set(a, false);
 }
 
 /** Synchronous drive for pure traversal tests (no story scripts involved). */
-export function driveTo(w: World, c: ScriptedControls, tx: number, ty: number, maxSec = 14): boolean {
+export function driveTo(
+  w: World,
+  c: Pad & Controls & { endFrame(): void },
+  tx: number,
+  ty: number,
+  maxSec = 14,
+): boolean {
   const dt = 1 / 60;
   for (let i = 0; i < maxSec * 60; i++) {
     if (w.failed || w.player.state === 'dead') return false;

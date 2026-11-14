@@ -28,7 +28,9 @@ interface LiveTrack {
 }
 
 export class AudioSys {
-  private ctx: AudioContext | null = null;
+  private ctx: AudioContext | OfflineAudioContext | null = null;
+  /** Rendering to a buffer rather than the speakers (see attach). */
+  private offline = false;
   private master!: GainNode;
   private musicBus!: GainNode;
   private sfxBus!: GainNode;
@@ -56,7 +58,22 @@ export class AudioSys {
   /** Must be called from a user gesture at least once. */
   resume(): void {
     if (!this.ctx) this.init();
-    if (this.ctx && this.ctx.state === 'suspended') void this.ctx.resume();
+    if (this.ctx && !this.offline && this.ctx.state === 'suspended') void this.ctx.resume();
+  }
+
+  /**
+   * Play into an offline context instead of the speakers, optionally through
+   * `out` rather than straight to its destination. Used to bounce a soundtrack
+   * to a file: the caller advances the context and calls sfx()/update() as it goes.
+   */
+  attach(ctx: OfflineAudioContext, out?: AudioNode): void {
+    this.offline = true;
+    this.init(ctx, out);
+  }
+
+  /** Whether sound can be scheduled now. An offline render counts even while it is paused to be fed. */
+  private get live(): boolean {
+    return !!this.ctx && (this.offline || this.ctx.state === 'running');
   }
 
   /** True once a user gesture has created the audio context. */
@@ -66,13 +83,16 @@ export class AudioSys {
 
   /** Silence everything while the tab is hidden (the continuous beds would otherwise keep playing). */
   suspend(): void {
-    if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend();
+    if (this.ctx && !this.offline && this.ctx.state === 'running') void (this.ctx as AudioContext).suspend();
   }
 
-  private init(): void {
-    const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AC) return;
-    const ctx = new AC();
+  private init(given?: OfflineAudioContext, out?: AudioNode): void {
+    let ctx: AudioContext | OfflineAudioContext | undefined = given;
+    if (!ctx) {
+      const AC = window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AC) return;
+      ctx = new AC();
+    }
     this.ctx = ctx;
     const limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -10;
@@ -80,7 +100,7 @@ export class AudioSys {
     limiter.ratio.value = 6;
     limiter.attack.value = 0.004;
     limiter.release.value = 0.2;
-    limiter.connect(ctx.destination);
+    limiter.connect(out ?? ctx.destination);
     this.master = ctx.createGain();
     this.master.connect(limiter);
     this.musicBus = ctx.createGain();
@@ -223,7 +243,7 @@ export class AudioSys {
   // -------------------------------------------------------------------- sfx
   sfx(name: string, vol = 1): void {
     const ctx = this.ctx;
-    if (!ctx || ctx.state !== 'running') return;
+    if (!ctx || !this.live) return;
     const t = ctx.currentTime;
     const d = this.sfxBus;
     const wet = this.reverbIn;
@@ -273,7 +293,7 @@ export class AudioSys {
       case 'relay':
         this.tone('sawtooth', 55, t, 0.5, 0.9, 0.09 * v, d, 110);
         this.tone('square', 1760, t + 0.5, 0.002, 0.07, 0.05 * v, d);
-        this.burst(t, 0.01, 0.2, 0.09 * v, 'highpass', 5000, 1, d);
+        this.burst(t, 0.01, 0.2, 0.045 * v, 'highpass', 5000, 1, d);
         break;
       case 'ui_move':
         this.tone('square', 660, t, 0.002, 0.035, 0.05 * v, d);
@@ -311,8 +331,9 @@ export class AudioSys {
         this.burst(t, 0.7, 1.5, 0.3 * v, 'bandpass', 350, 0.9, d, 1100);
         break;
       case 'static':
-        this.burst(t, 0.01, 0.28, 0.1 * v, 'bandpass', 2600, 0.6, d);
-        this.tone('sine', 1900, t, 0.01, 0.2, 0.02 * v, d, 700);
+        // Kept low: broadband noise reads as much louder than its level suggests.
+        this.burst(t, 0.01, 0.28, 0.042 * v, 'bandpass', 2600, 0.6, d);
+        this.tone('sine', 1900, t, 0.01, 0.2, 0.009 * v, d, 700);
         break;
       case 'horn':
         this.tone('sawtooth', 98, t, 0.4, 2.6, 0.1 * v, wet, 92);
@@ -339,7 +360,7 @@ export class AudioSys {
   /** Dialogue blip: a soft, pitched tick per few characters. */
   blip(pitch: number): void {
     const ctx = this.ctx;
-    if (!ctx || ctx.state !== 'running') return;
+    if (!ctx || !this.live) return;
     const f = 430 * pitch * (0.94 + Math.random() * 0.12);
     this.tone('triangle', f, ctx.currentTime, 0.003, 0.045, 0.05, this.sfxBus);
   }
@@ -532,7 +553,7 @@ export class AudioSys {
   // ----------------------------------------------------------- radio tuning
   tuning(c: number | null): void {
     const ctx = this.ctx;
-    if (!ctx || ctx.state !== 'running') return;
+    if (!ctx || !this.live) return;
     const t = ctx.currentTime;
     if (c === null) {
       const tn = this.tune;
@@ -575,11 +596,11 @@ export class AudioSys {
       this.tune = { staticG, sigG, whistle, whistleG, sigFilter, step: 0, next: t + 0.05 };
     }
     const tn = this.tune;
-    tn.staticG.gain.setTargetAtTime(0.13 * (1 - c * 0.92), t, 0.05);
+    tn.staticG.gain.setTargetAtTime(0.055 * (1 - c * 0.92), t, 0.05);
     tn.sigG.gain.setTargetAtTime(0.95 * c * c, t, 0.08);
     tn.sigFilter.frequency.setTargetAtTime(400 + c * c * 5000, t, 0.08);
     tn.whistle.frequency.setTargetAtTime(260 + (1 - c) * 2100, t, 0.03);
-    tn.whistleG.gain.setTargetAtTime(0.05 * Math.sin(Math.PI * c), t, 0.05);
+    tn.whistleG.gain.setTargetAtTime(0.024 * Math.sin(Math.PI * c), t, 0.05);
     // The Magpie call-sign, looping underneath the static.
     const JINGLE = [69, -1, 72, 76, -1, 74, 72, -1, 69, -1, 67, 69, -1, -1, 64, -1];
     while (tn.next < t + 0.2) {
@@ -606,7 +627,8 @@ export class AudioSys {
     if (this.track) {
       const old = this.track.out;
       old.gain.setTargetAtTime(0, t, 0.9);
-      window.setTimeout(() => old.disconnect(), 6000);
+      // (Offline, wall-clock time means nothing; the faded track is simply left connected.)
+      if (!this.offline) window.setTimeout(() => old.disconnect(), 6000);
       this.track = null;
     }
     const def = id ? TRACKS[id] : undefined;
@@ -622,7 +644,7 @@ export class AudioSys {
   update(): void {
     const ctx = this.ctx;
     const tr = this.track;
-    if (!ctx || !tr || ctx.state !== 'running') return;
+    if (!ctx || !tr || !this.live) return;
     const stepDur = 60 / tr.def.bpm / 4;
     if (tr.next < ctx.currentTime - 0.2) tr.next = ctx.currentTime + 0.05;
     while (tr.next < ctx.currentTime + 0.25) {

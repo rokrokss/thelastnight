@@ -106,7 +106,7 @@ export class Session {
   update(dt: number, input: Controls): void {
     if (this.exited) return;
     const w = this.world;
-    w.update(dt, input);
+    w.update(dt * this.director.timeScale, input);
     this.director.update(dt);
 
     if (w.failed) {

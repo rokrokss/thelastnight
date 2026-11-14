@@ -198,10 +198,11 @@ export function paintSpire(level: LevelData): SceneArt {
       const u = (t * 0.32 + i / 4) % 1;
       const r = 8 + u * 190;
       const alpha = (1 - u) * 0.7;
-      const steps = Math.max(24, Math.floor(r * 1.1));
+      // Whole rings: the masthead sits at the very top of the frame, so it is the lower half that is seen.
+      const steps = Math.max(48, Math.floor(r * 3));
       for (let s2 = 0; s2 < steps; s2++) {
-        const ang = Math.PI + (s2 / (steps - 1)) * Math.PI;
-        st.emit(320 + Math.cos(ang) * r, 30 + Math.sin(ang) * r * 0.62, 2, 1, i % 2 ? GLOW.teal : '#ffd9a0', alpha, 0.4);
+        const ang = (s2 / steps) * Math.PI * 2;
+        st.emit(320 + Math.cos(ang) * r, 30 + Math.sin(ang) * r * 0.62, 2, 2, i % 2 ? GLOW.teal : '#ffd9a0', alpha, 0.4);
       }
     }
     st.emit(317, 24, 7, 7, '#fff2d8', 0.5 + 0.5 * Math.sin(t * 9), 0.8);
