@@ -4,6 +4,7 @@ import { fbm, Rng } from '../../core/math';
 import { Art } from '../../gfx/art';
 import type { LevelData } from '../../game/level';
 import { paintSkyline } from '../city';
+import { backCopy, block, cloudTile, corrugatedTile, deckTile, plain } from '../depth';
 import { GLOW, RAMP } from '../palette';
 import { maskOccluder, type PaintCtx } from '../paint';
 import { paintProp } from '../props';
@@ -145,6 +146,24 @@ export function paintSpire(level: LevelData): SceneArt {
   const SUMMIT = 420;
 
   steelDeck(c, -PAD, level.width + PAD, G, level.seed);
+  // The tower as a frame with a far side, its landings running back through it;
+  // the storm's cloud deck is a real ceiling on the way up and a floor from above.
+  const DEPTH = 230;
+  // The sky here changes with height, not distance: it was composed for the frame, so it stays put.
+  art.lift = 0;
+  const deckTex = deckTile(c.depth, level.seed + 21);
+  c.depth.floor(-400, level.width + 400, G, 0, 320, deckTex, { tile: true, wet: 0.5 });
+  plain(c, CLOUD_TOP + 40, cloudTile(c.depth, level.seed + 22, '#4a5c82', '#a9bcdc'), { lit: 0, shade: 1.5 }, -480);
+  backCopy(c, XL - 8, SUMMIT - 4, XR - XL + 20, G - SUMMIT + 4, DEPTH, (cc) => core(cc, XL, XR, G, SUMMIT));
+  for (const o of level.oneWays) {
+    // (Open grating: nothing pools on it, so it does not mirror.)
+    if (o.tag === 'catwalk') c.depth.floor(o.x, o.x + o.w, o.y, 0, DEPTH, deckTex, { tile: true, shade: 0.8 });
+  }
+  for (const sd of level.solids) {
+    if (sd.tag === 'slab') c.depth.floor(sd.x, sd.x + sd.w, sd.y, 0, 34, deckTex, { tile: true, shade: 0.85 });
+  }
+  const shackWall = corrugatedTile(c.depth, '#1d2a30');
+  block(c, 246, 396, SUMMIT - 58, SUMMIT, 96, { side: shackWall, top: shackWall });
   core(c, XL, XR, G, SUMMIT);
   // Upper mast above the shack.
   for (let y = 80; y < SUMMIT - 60; y += 36) {

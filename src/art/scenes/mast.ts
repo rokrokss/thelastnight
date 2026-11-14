@@ -5,6 +5,7 @@ import { Art } from '../../gfx/art';
 import type { LevelData } from '../../game/level';
 import { paintSky, paintSpire } from '../city';
 import { GLOW, RAMP } from '../palette';
+import { backCopy, block, cloudTile, corrugatedTile, deckTile, plain, roofTile } from '../depth';
 import { cable, maskFloor, type PaintCtx } from '../paint';
 import { paintProp } from '../props';
 import {
@@ -132,8 +133,14 @@ export function paintMast(level: LevelData): SceneArt {
   const rng = new Rng(level.seed);
 
   steelDeck(c, -PAD, W + PAD, G, level.seed);
+  // The platform runs back from its front edge; the fog is a surface far below it, out to the horizon.
+  c.depth.floor(-400, W + 400, G, 0, 150, deckTile(c.depth, level.seed + 21), { tile: true, wet: 0.3 });
+  plain(c, G + 210, cloudTile(c.depth, level.seed + 22, '#2a3a5a', '#52688f'), { lit: 0, shade: 1 }, -480);
+  const hutWall = corrugatedTile(c.depth, RAMP.plaster[1]);
+  block(c, 28, 106, G - 48, G, 70, { side: hutWall, top: roofTile(c.depth, level.seed + 23) });
 
-  // The mast itself.
+  // The mast itself: four legs, so the far pair stands behind the near pair.
+  backCopy(c, 330, 90, 242, G - 90, 140, (cc) => truss(cc, 338, 562, G, 428, 472, 96));
   truss(c, 338, 562, G, 428, 472, 96);
   a.rect(449, 40, 2, 60, m[1]);
   a.rect(444, 60, 12, 1, m[1]);

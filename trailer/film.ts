@@ -1,5 +1,8 @@
+import { ARENA, FLOOD_X, G as QUAY, HANG, HOLD_X, LATCH, LAUNCH_X, PEDESTAL_X, POST } from '../src/content/ch3b.level';
+import { Kaiju } from '../src/game/kaiju';
 import type { Mood } from '../src/game/view';
 import type { Title } from './overlay';
+import { armed, fire, posted, risen } from './previews';
 import type { Scene } from './scene';
 
 /** One shot of the trailer. */
@@ -40,6 +43,10 @@ const HALF = BAR / 2;
 const COLD: Partial<Mood> = { vignette: 0.18, saturation: -0.16, aberration: 0.008 };
 /** The transmitter is live. */
 const WARM: Partial<Mood> = { bloom: 0.2, exposure: 0.06 };
+/** The fight on the quay: cold, but with enough light to follow who is shooting at whom. */
+const FIGHT: Partial<Mood> = { vignette: 0.16, saturation: -0.08, exposure: 0.14, aberration: 0.006 };
+/** Under the Undertow: the storm flattens the colour and lifts the dark. */
+const STORM: Partial<Mood> = { vignette: 0.12, saturation: -0.08, exposure: 0.06 };
 
 const ignore = (): undefined => undefined;
 
@@ -71,12 +78,12 @@ const takes: Take[] = [
       s.w.signals.beacon = 1;
       s.d.cine.fade = [0, 0, 0, 1];
       // Begin on the moon and the fog sea, with the mast only a soft shape in front of them.
-      s.d.cut({ x: 610, y: 190, zoom: 1, rack: -1, roll: -0.012 });
+      s.d.cut({ x: 610, y: 190, zoom: 1, rack: -1, roll: -0.012, shiftX: 60, shiftY: -130 });
     },
     play(s) {
       void s.d.fade(0, 2.6);
       // One long crane down the steel to the woman who keeps it standing.
-      s.d.drift({ x: 320, y: 470, zoom: 1.24, rack: 0, roll: 0 }, 7.5);
+      s.d.drift({ x: 320, y: 470, zoom: 1.24, rack: 0, roll: 0, shiftX: 0, shiftY: -30 }, 7.5);
       void s.d.walk('sol', 300, 18).catch(ignore);
     },
   },
@@ -91,11 +98,12 @@ const takes: Take[] = [
       s.sol(424, 214, 1);
       s.w.locked = 1;
       // Start with the lens on the wires and lamps in front of her.
-      s.d.cut({ on: 'sol', zoom: 1.3, dx: 50, dy: -20, rack: 0.8, roll: 0 });
+      s.d.cut({ on: 'sol', zoom: 1.08, dx: 50, dy: -4, rack: 0.5, roll: 0, shiftX: 90, shiftY: -170 });
     },
     play(s) {
       void s.d.walk('sol', 780, 38).catch(ignore);
-      s.d.drift({ on: 'sol', zoom: 1.2, dx: 64, dy: -20, rack: 0 }, 2.2);
+      // From above the tarp roofs and the wet road, down to walk beside her.
+      s.d.drift({ on: 'sol', zoom: 1.2, dx: 64, dy: -14, rack: 0, shiftX: 0, shiftY: -30 }, 3.6);
     },
   },
   {
@@ -107,11 +115,13 @@ const takes: Take[] = [
       s.sol(1254, 214, -1);
       s.w.locked = 1;
       s.w.player.pose = 'sit';
-      s.d.cut({ x: 1232, y: 188, zoom: 1.9, rack: 0, roll: 0 });
+      // Begin on Baek's regular, stripped to the waist over his bowl.
+      s.d.cut({ x: 1216, y: 197, zoom: 3.2, rack: 0, roll: 0, shiftX: -70, shiftY: -36 });
     },
     play(s) {
       s.w.actor('baek').talking = 2;
-      s.d.drift({ x: 1232, y: 186, zoom: 2.2 }, BAR, 'linear');
+      // Pull back and slide sideways to find her beside him: the stall turns a little, like a real thing.
+      s.d.drift({ x: 1232, y: 188, zoom: 2.05, shiftX: 60, shiftY: -44 }, BAR, 'out');
     },
   },
   {
@@ -147,7 +157,7 @@ const takes: Take[] = [
       s.sol(190, 430, 1);
       const jin = s.w.actor('jin');
       jin.x = 262;
-      s.track({ lead: 70, y: 372, zoom: 1.16, sway: 0.006 });
+      s.track({ lead: 70, y: 380, zoom: 1.16, sway: 0.006, shiftY: -84, shiftX: 30 });
     },
     play(s) {
       const d = s.d;
@@ -236,7 +246,7 @@ const takes: Take[] = [
       // Up the stacked containers on the floodlit apron, a Listener working the row.
       s.sol(1790, 560, 1);
       s.run([1810, 560], [1856, 500], [1928, 470], [2010, 440], [2084, 440], [2156, 470]);
-      s.track({ lead: 34, zoom: 1.34, roll: -0.012 });
+      s.track({ lead: 34, zoom: 1.34, roll: -0.012, shiftY: -96, shiftX: -40 });
       s.d.mood({ exposure: 0.12 }, 0);
     },
     each(s) {
@@ -287,7 +297,7 @@ const takes: Take[] = [
       s.sol(2400, 406, 1);
       s.w.drone('sweeper').active = true;
       s.run([2636, 406], [2694, 406], [2956, 406], [3004, 374], [3256, 374], [3304, 394], [3500, 394]);
-      s.track({ lead: -30, y: 344, zoom: 1.12, sway: 0.02 });
+      s.track({ lead: -30, y: 352, zoom: 1.12, sway: 0.02, shiftY: -70 });
     },
     async play(s) {
       s.d.sfx('caught', 0.5);
@@ -351,24 +361,8 @@ const takes: Take[] = [
     },
   },
   {
-    name: 'face',
-    at: 21 * BAR,
-    dur: HALF,
-    chapter: 'spire',
-    pre: 0.9,
-    setup(s) {
-      s.sol(396, 2100, 1);
-      s.run([430, 2100], [484, 2068], [462, 2068], [476, 2020], [432, 1980]);
-      s.d.cut({ x: 452, y: 2040, zoom: 1.36, roll: 0.03, rack: 0 });
-    },
-    async play(s) {
-      await s.d.wait(0.4);
-      s.strike();
-    },
-  },
-  {
     name: 'scan',
-    at: 21 * BAR + HALF,
+    at: 21 * BAR,
     dur: HALF,
     chapter: 'spire',
     setup(s) {
@@ -385,7 +379,7 @@ const takes: Take[] = [
   },
   {
     name: 'sprint',
-    at: 22 * BAR,
+    at: 21 * BAR + HALF,
     dur: HALF,
     chapter: 'lanes',
     pre: 0.8,
@@ -405,121 +399,257 @@ const takes: Take[] = [
       dr.sus = 0.8;
     },
   },
+
+  // The quay: Meridian stops sending lamps and sends rifles.
   {
-    name: 'fire',
+    name: 'gun',
+    at: 22 * BAR,
+    dur: HALF,
+    chapter: 'quay',
+    setup(s) {
+      const c = armed(s);
+      c.armed = false;
+      s.sol(PEDESTAL_X + 28, QUAY, -1);
+      s.w.locked = 1;
+      s.w.actor('gil').talking = 1.2;
+      s.d.mood(FIGHT, 0);
+      s.d.cut({ on: ['sol', 'gil'], zoom: 1.95, dx: 0, dy: -8, roll: 0, rack: 0, shiftX: -50, shiftY: -30 });
+    },
+    async play(s) {
+      const d = s.d;
+      d.drift({ on: ['sol', 'gil'], zoom: 2.15, dy: -8, shiftX: 30 }, HALF, 'linear');
+      // Thirty years of rivets; tonight it is a gun.
+      await d.wait(0.5);
+      s.w.combat!.armed = true;
+      d.sfx('recharge');
+    },
+  },
+  {
+    name: 'ashore',
     at: 22 * BAR + HALF,
     dur: HALF,
-    chapter: 'yards',
+    chapter: 'quay',
+    pre: 1.6,
     setup(s) {
-      s.sol(364, 560, -1);
+      const c = armed(s);
+      c.spawn([
+        { id: 'a', x: LAUNCH_X - 10, y: QUAY, posts: [POST.c] },
+        { id: 'b', x: LAUNCH_X + 34, y: QUAY, posts: [POST.d] },
+        { id: 's', kind: 'shield', x: LAUNCH_X - 60, y: QUAY, posts: [POST.a] },
+      ]);
+      s.sol(PEDESTAL_X + 28, QUAY, 1);
       s.w.locked = 1;
-      s.d.cut({ on: ['sol', 'gil'], zoom: 1.8, dx: 0, dy: -8, roll: 0, rack: 0 });
+      s.d.mood(FIGHT, 0);
+      // From low on the deck: they come on over the lens, the launch and the channel behind them.
+      s.d.cut({ x: LAUNCH_X - 150, y: QUAY - 44, zoom: 1.5, roll: -0.03, rack: 0, shiftX: 70, shiftY: 26 });
     },
     play(s) {
-      s.w.actor('gil').talking = 1.2;
-      s.d.drift({ zoom: 1.95 }, HALF, 'linear');
+      s.d.drift({ x: LAUNCH_X - 200, y: QUAY - 46, zoom: 1.6, roll: -0.012, shiftX: 20 }, HALF, 'linear');
     },
   },
   {
-    name: 'kid',
+    name: 'cover',
     at: 23 * BAR,
-    dur: HALF,
-    chapter: 'tops',
-    setup(s) {
-      emptyRoofs(s);
-      s.sol(112, 430, 1);
-      s.w.locked = 1;
-      s.d.faceEachOther('jin');
-      s.d.cut({ on: 'jin', zoom: 2.1, dx: 0, dy: -5, roll: 0, rack: 0 });
-    },
-    async play(s) {
-      const d = s.d;
-      s.w.actor('jin').talking = 0.5;
-      await d.wait(0.5);
-      // "If I jump, you jump."
-      void d.walk('jin', 300, 112).catch(ignore);
-      d.drift({ on: 'jin', zoom: 1.5, dx: 40 }, 0.75, 'in');
-    },
-  },
-  {
-    name: 'lift',
-    at: 23 * BAR + HALF,
     dur: BAR,
-    chapter: 'spire',
+    chapter: 'quay',
+    pre: 4.9,
     setup(s) {
-      s.sol(248, 1980, 1);
-      s.w.locked = 1;
-      s.d.cut({ on: 'sol', zoom: 1.9, dx: 0, dy: -5, roll: 0, rack: 0 });
+      const c = armed(s);
+      posted(c, [{ id: 'a', at: POST.a }, { id: 'c', at: POST.c }, { id: 'd', at: POST.d }, { id: 'b', at: POST.b2 }]);
+      s.sol(HOLD_X, QUAY, 1);
+      s.pad.set('down', true);
+      s.w.heat = 0.4;
+      s.d.mood(FIGHT, 0);
+      // Down the length of the apron, the black channel beyond it.
+      s.d.cut({ x: 566, y: QUAY - 58, zoom: 1.3, roll: 0.012, rack: 0, shiftX: -70, shiftY: -84 });
     },
     play(s) {
-      // Tight on her as the platform jerks into motion, then the tower falls away around her.
-      s.w.mover('lift').active = true;
-      s.d.sfx('switch');
-      s.d.shake(0.2);
-      s.d.drift({ on: 'sol', zoom: 1, dx: 70, dy: 24, rack: -0.3 }, BAR);
+      s.d.drift({ x: 580, y: QUAY - 58, zoom: 1.4, roll: -0.006, shiftX: 40, shiftY: -60 }, BAR, 'linear');
+    },
+    each(s) {
+      // Small while they shoot; then up over the barrier to answer it.
+      const up = fire(s, 0.7, 1.9);
+      s.pad.set('down', !up);
+      s.pad.set('fire', up);
     },
   },
   {
-    name: 'beacon',
+    name: 'enforcer',
+    at: 24 * BAR,
+    dur: HALF,
+    chapter: 'quay',
+    pre: 0.8,
+    setup(s) {
+      const c = armed(s);
+      posted(c, [{ id: 'c', at: POST.c }]);
+      s.sol(HOLD_X, QUAY, 1);
+      s.pad.set('down', true);
+      s.d.mood(FIGHT, 0);
+      // One of them: up over its cover, the red line, the burst.
+      s.d.cut({ x: POST.c - 30, y: QUAY - 26, zoom: 2.5, roll: -0.02, rack: 0, shiftX: 40, shiftY: -16 });
+    },
+    play(s) {
+      s.d.drift({ x: POST.c - 44, y: QUAY - 26, zoom: 2.2, roll: 0, shiftX: -20 }, HALF, 'out');
+    },
+  },
+  {
+    name: 'shield',
     at: 24 * BAR + HALF,
     dur: HALF,
-    chapter: 'mast',
+    chapter: 'quay',
+    pre: 2.1,
     setup(s) {
-      s.sol(444, 190, 1);
-      s.w.locked = 1;
-      s.w.player.pose = 'kneel';
-      s.d.cut({ on: 'sol', zoom: 1.7, dx: 8, dy: -8, roll: 0, rack: 0 });
-    },
-    async play(s) {
-      const d = s.d;
-      await d.wait(0.35);
-      s.w.signals.beacon = 1;
-      d.sfx('lock');
-      d.flash(0.35, 0.6);
-      d.cut({ x: 470, y: 216, zoom: 1.06 });
-      d.drift({ y: 236, zoom: 1 }, 0.9, 'out');
-    },
-  },
-  {
-    name: 'cloud',
-    at: 25 * BAR,
-    dur: HALF,
-    chapter: 'spire',
-    pre: 0.9,
-    setup(s) {
-      s.sol(232, 980, 1);
-      s.run([232, 900]);
-      s.d.cut({ on: 'sol', zoom: 1.36, dx: 0, dy: -16, roll: 0.04, rack: 0 });
+      const c = armed(s);
+      c.spawn([{ id: 's', kind: 'shield', x: 700, y: QUAY, posts: [610, 560] }]);
+      posted(c, [{ id: 'd', at: POST.d }]);
+      s.sol(HOLD_X + 40, QUAY, 1);
+      s.w.heat = 0.4;
+      s.d.mood(FIGHT, 0);
+      // The big one walks in behind its own wall, and her rivets go off it.
+      s.d.cut({ x: 540, y: QUAY - 50, zoom: 1.62, roll: -0.014, rack: 0, shiftX: 30, shiftY: -40 });
     },
     play(s) {
-      s.strike();
+      s.d.drift({ x: 526, y: QUAY - 50, zoom: 1.72, shiftX: -20 }, HALF, 'linear');
+    },
+    each(s) {
+      s.pad.set('fire', fire(s, -2, 1.2));
     },
   },
   {
-    name: 'through',
-    at: 25 * BAR + HALF,
-    dur: HALF,
-    chapter: 'spire',
-    pre: 0.5,
+    name: 'drop',
+    at: 25 * BAR,
+    dur: BAR,
+    chapter: 'quay',
+    pre: 2.5,
     setup(s) {
-      s.sol(232, 820, 1);
-      s.run([232, 740]);
-      s.d.cut({ on: 'sol', zoom: 1.16, dx: 0, dy: -36, roll: -0.02, rack: 0 });
+      const c = armed(s);
+      posted(c, [
+        { id: 's1', kind: 'shield', at: POST.b1, dug: true },
+        { id: 's2', kind: 'shield', at: POST.b2, dug: true },
+        { id: 't', at: POST.b3 },
+      ]);
+      c.mark('latch', LATCH.x, LATCH.y, 1, 8).armed = true;
+      s.sol(HOLD_X + 46, QUAY, 1);
+      s.w.heat = 0.4;
+      s.d.mood(FIGHT, 0);
+      // Three of them dug in under Gil's box, and the one thing holding it up.
+      s.d.cut({ x: 552, y: QUAY - 70, zoom: 1.36, roll: 0.01, rack: 0, shiftX: -30, shiftY: -24 });
     },
     async play(s) {
       const d = s.d;
-      d.drift({ on: 'sol', zoom: 1, dy: -50, roll: 0 }, HALF, 'in');
-      await d.wait(0.9);
-      // She breaks the cloud top: the picture burns out to white.
-      s.strike();
-      void d.fade(1, 0.3, [1, 1, 1]);
+      const c = s.w.combat!;
+      const latch = c.marks[0]!;
+      d.drift({ x: 566, y: QUAY - 62, zoom: 1.56, shiftX: 20 }, BAR, 'out');
+      // Hold on the three of them long enough to count them, then the one rivet.
+      await d.wait(0.85);
+      s.pad.tap('fire');
+      while (!latch.gone) await d.wait(0.02);
+      c.drop(s.w, HANG.id);
+      // The fall, stretched.
+      await d.slowmo(0.35, 0.45);
+    },
+  },
+
+  // ------------------------------------------------- the tide (bars 26-29)
+  {
+    name: 'rise',
+    at: 26 * BAR,
+    dur: 2 * BAR,
+    chapter: 'tide',
+    pre: 2.4,
+    setup(s) {
+      const c = armed(s);
+      const k = new Kaiju(ARENA);
+      c.kaiju = k;
+      s.sol(1010, QUAY, 1);
+      s.w.locked = 1;
+      s.d.mood(STORM, 0);
+      k.surface();
+      // Looking down on the black channel from the quay's edge.
+      s.d.cut({ x: 1070, y: QUAY - 104, zoom: 1.12, rack: -0.6, roll: -0.01, shiftX: -50, shiftY: -96 });
+    },
+    play(s) {
+      s.d.sfx('call');
+      s.d.shake(0.35);
+      // The lens tips back as it comes up, and keeps tipping: the horizon drops out from under it.
+      s.d.drift({ x: 1090, y: QUAY - 92, zoom: 1, rack: -0.75, roll: 0.012, shiftX: 30, shiftY: 84 }, 2 * BAR, 'inOut');
+    },
+    each(s, t) {
+      if (t > 3.55 && t < 3.6) s.strike();
+    },
+  },
+  {
+    name: 'slam',
+    at: 28 * BAR,
+    dur: HALF,
+    chapter: 'tide',
+    pre: 2.3,
+    setup(s) {
+      risen(s, 1);
+      s.sol(760, QUAY, 1);
+      s.d.cut({ x: 800, y: QUAY - 66, zoom: 1.08, rack: 0, roll: 0.014, shiftX: 0, shiftY: 30 });
+    },
+    play(s) {
+      // She has stood her ground a moment too long: out from under it as the arm comes down.
+      s.run([852, QUAY]);
+      s.d.drift({ x: 816, y: QUAY - 66, zoom: 1.12, roll: -0.01 }, HALF, 'linear');
+    },
+  },
+  {
+    name: 'barb',
+    at: 28 * BAR + HALF,
+    dur: HALF,
+    chapter: 'tide',
+    pre: 3.6,
+    setup(s) {
+      risen(s, 1);
+      s.sol(800, QUAY, 1);
+      s.d.cut({ x: 780, y: QUAY - 60, zoom: 1.3, rack: 0, roll: -0.012, shiftX: 0, shiftY: 10 });
+    },
+    play(s) {
+      // The limb is planted where she was standing: the barb in its wrist, and a rivet gun.
+      s.sol(728, QUAY, 1);
+      s.d.cut({ x: 772, y: QUAY - 62, zoom: 1.36, rack: 0, roll: -0.012, shiftX: -30, shiftY: 10 });
+      s.d.drift({ x: 778, y: QUAY - 66, zoom: 1.5, shiftX: 20 }, HALF, 'out');
+    },
+    each(s) {
+      s.pad.set('fire', fire(s, 0.15, 0.25) || fire(s, 0.6, 0.7) || fire(s, 1.0, 1.1));
+    },
+  },
+  {
+    name: 'floods',
+    at: 29 * BAR,
+    dur: BAR,
+    chapter: 'tide',
+    setup(s) {
+      risen(s);
+      s.sol(FLOOD_X + 14, QUAY, 1);
+      s.w.locked = 1;
+      s.d.cut({ x: 1040, y: QUAY - 96, zoom: 1, rack: -0.8, roll: -0.02, shiftX: -30, shiftY: 70 });
+    },
+    async play(s) {
+      const d = s.d;
+      const k = s.w.combat!.kaiju!;
+      d.drift({ x: 1070, y: QUAY - 100, zoom: 1.06, roll: 0.01, shiftX: 20, shiftY: 90 }, BAR, 'out');
+      await d.wait(0.3);
+      // Every lamp on the quay, turned on it.
+      s.w.signals.floods = 1;
+      k.floods = true;
+      d.sfx('floods');
+      d.flash(0.3, 0.5);
+      await d.wait(0.5);
+      k.rearUp(s.w);
+      d.shake(0.6);
+      await d.wait(1.0);
+      // ...and the picture burns out to white.
+      void d.fade(1, 0.6, [1, 1, 1]);
     },
   },
 
   // ---------------------------------------------------------------- break
   {
     name: 'above',
-    at: 26 * BAR,
+    at: 30 * BAR,
     dur: 2 * BAR,
     chapter: 'spire',
     setup(s) {
@@ -539,7 +669,7 @@ const takes: Take[] = [
   // --------------------------------------------------------------- finale
   {
     name: 'wake',
-    at: 28 * BAR,
+    at: 32 * BAR,
     dur: BAR,
     chapter: 'spire',
     setup(s) {
@@ -564,7 +694,7 @@ const takes: Take[] = [
   },
   {
     name: 'onair',
-    at: 29 * BAR,
+    at: 33 * BAR,
     dur: BAR,
     chapter: 'spire',
     setup(s) {
@@ -582,39 +712,39 @@ const takes: Take[] = [
   },
   {
     name: 'morning',
-    at: 30 * BAR,
+    at: 34 * BAR,
     dur: BAR,
     chapter: 'dawn',
     setup(s) {
       s.w.walkOnly = true;
       s.sol(2540, 214, -1);
       s.w.locked = 1;
-      s.d.cut({ x: 2290, y: 116, zoom: 1.3, rack: -0.8, roll: 0 });
+      s.d.cut({ x: 2290, y: 160, zoom: 1.1, rack: -0.6, roll: 0, shiftX: -80, shiftY: -170 });
     },
     play(s) {
       // First light, tracking level down the street she warned.
       void s.d.walk('sol', 2400, 30).catch(ignore);
-      s.d.drift({ x: 2420, y: 132, zoom: 1.15, rack: 0 }, BAR, 'linear');
+      s.d.drift({ x: 2420, y: 168, zoom: 1.15, rack: 0, shiftX: 0, shiftY: -40 }, BAR, 'linear');
     },
   },
   {
     name: 'mun',
-    at: 31 * BAR,
+    at: 35 * BAR,
     dur: BAR,
     chapter: 'dawn',
     setup(s) {
       // The voice, with a face at last.
       s.sol(1284, 214, -1);
       s.w.locked = 1;
-      s.d.cut({ on: ['sol', 'mun'], fit: true, dx: 0, dy: -8, roll: 0, rack: 0 });
+      s.d.cut({ on: ['sol', 'mun'], fit: true, dx: 0, dy: -8, roll: 0, rack: 0, shiftX: 60, shiftY: -40 });
     },
     play(s) {
       s.w.actor('mun').talking = 1.5;
-      s.d.drift({ on: ['sol', 'mun'], zoom: 2.05, dy: -6 }, BAR, 'linear');
+      s.d.drift({ on: ['sol', 'mun'], zoom: 2.05, dy: -6, shiftX: -60 }, BAR, 'linear');
     },
   },
 
-  // 32 * BAR: logo.
+  // 36 * BAR: logo.
 ];
 
 const titles: Title[] = [
@@ -633,11 +763,14 @@ const titles: Title[] = [
   { at: 12 * BAR, dur: BAR, kind: 'card', lines: ['THE WARNING', 'WAS SOLD.'] },
   { at: 16 * BAR + 0.1, dur: 2.3, kind: 'caption', who: 'cha', text: 'Stop there. Spectrum Authority.' },
   { at: 19 * BAR + 0.1, dur: 2.35, kind: 'card', lines: ['FOUR DEAD RELAYS.', 'ONE NIGHT.'], dim: 0.42 },
-  { at: 26 * BAR + 0.6, dur: 2.5, kind: 'caption', who: 'mun', text: "They cut my carrier at Marrow Lane. I never got to the P's." },
-  { at: 26 * BAR + 3.3, dur: 1.6, kind: 'caption', who: 'sol', text: '...Pier Street.' },
-  { at: 29 * BAR + 0.1, dur: 2.3, kind: 'caption', who: 'sol', text: 'This is the open band. This is not a test.' },
+  { at: 22 * BAR + 0.1, dur: 2.3, kind: 'caption', who: 'gil', text: 'Thirty years of rivets. Tonight it is a gun.' },
+  { at: 26 * BAR + 0.6, dur: 1.7, kind: 'caption', who: 'sol', text: 'Gil. What is that.' },
+  { at: 27 * BAR + 0.3, dur: 2.1, kind: 'caption', who: 'gil_radio', text: 'That is no surge. That is the Undertow.' },
+  { at: 30 * BAR + 0.6, dur: 2.5, kind: 'caption', who: 'mun', text: "They cut my carrier at Marrow Lane. I never got to the P's." },
+  { at: 30 * BAR + 3.3, dur: 1.6, kind: 'caption', who: 'sol', text: '...Pier Street.' },
+  { at: 33 * BAR + 0.1, dur: 2.3, kind: 'caption', who: 'sol', text: 'This is the open band. This is not a test.' },
   {
-    at: 32 * BAR,
+    at: 36 * BAR,
     dur: 2 * BAR,
     kind: 'logo',
     tag: 'THE WARNING WAS SOLD.  SEND IT ANYWAY.',
@@ -648,4 +781,4 @@ const titles: Title[] = [
 // The montage is cut to the kick drum: each of its takes arrives with a flicker of light.
 for (const t of takes) if (t.at >= 20 * BAR && t.at < 26 * BAR) t.punch = 0.2;
 
-export const FILM: Film = { duration: 34 * BAR, takes, titles };
+export const FILM: Film = { duration: 38 * BAR, takes, titles };

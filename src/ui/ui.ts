@@ -2,6 +2,7 @@ import './ui.css';
 import { VIEW_H, VIEW_W } from '../core/constants';
 import type { Action, Input } from '../core/input';
 import { clamp } from '../core/math';
+import { MAG, MAX_HP } from '../game/combat';
 import { SPEAKERS, type Line, type Presenter, type TuneConfig } from '../game/director';
 import { Tuner } from '../game/tuner';
 
@@ -85,6 +86,9 @@ export class UI implements Presenter {
   private promptEl: HTMLElement;
   private detectEl: HTMLElement;
   private detectBar: HTMLElement;
+  private combatEl: HTMLElement;
+  private combatKey = '';
+  private combatOn = false;
   private dangerEl: HTMLElement;
   private veilEl: HTMLElement;
   private titleEl: HTMLElement;
@@ -104,6 +108,7 @@ export class UI implements Presenter {
     this.detectEl = el('detect', root);
     this.detectBar = document.createElement('i');
     this.detectEl.appendChild(this.detectBar);
+    this.combatEl = el('combat', root);
     this.promptEl = el('prompt hidden', root);
     this.toastEl = el('toast', root);
     this.veilEl = el('veil hidden', root);
@@ -318,6 +323,21 @@ export class UI implements Presenter {
     if (on === this.hudOn) return;
     this.hudOn = on;
     this.objectiveEl.classList.toggle('on', !!this.objectiveText && on);
+    this.combatEl.classList.toggle('on', this.combatOn && on);
+  }
+
+  /** Health pips and the rivet gun's pressure. Pass null whenever Sol is not armed. */
+  setCombat(s: { hp: number; pressure: number; hurt: boolean } | null): void {
+    this.combatOn = !!s;
+    this.combatEl.classList.toggle('on', this.combatOn && this.hudOn);
+    if (!s) return;
+    const key = `${s.hp}/${s.pressure}/${s.hurt ? 1 : 0}`;
+    if (key === this.combatKey) return;
+    this.combatKey = key;
+    const pips = (n: number, of: number): string => '<i></i>'.repeat(n) + '<i class="off"></i>'.repeat(of - n);
+    this.combatEl.classList.toggle('hurt', s.hurt);
+    this.combatEl.classList.toggle('dry', s.pressure <= 0);
+    this.combatEl.innerHTML = `<span class="hp">${pips(s.hp, MAX_HP)}</span><span class="tag">RIVET GUN</span><span class="gun">${pips(s.pressure, MAG)}</span>`;
   }
 
   toast(text: string): void {
@@ -567,6 +587,7 @@ export class UI implements Presenter {
     btn('▼', ['down'], { left: p(94), bottom: p(14) });
     btn('A', ['jump', 'confirm'], { right: p(10), bottom: p(14) });
     btn('B', ['interact', 'confirm'], { right: p(52), bottom: p(30) });
+    btn('F', ['fire'], { right: p(94), bottom: p(14) });
     btn('II', ['pause'], { right: p(10), top: p(8), width: p(22), height: p(22) });
   }
 

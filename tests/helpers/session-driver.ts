@@ -20,6 +20,8 @@ export class SessionDriver implements Driver {
   readonly flags: Record<string, number> = {};
   readonly pad = new ScriptedControls();
   readonly ready = true;
+  /** Let the fights hurt (they are harmless by default, like stealth and wind). */
+  lethal = false;
 
   get world(): World {
     return this.session.world;
@@ -58,6 +60,7 @@ export class SessionDriver implements Driver {
     // Story tests cover logic and traversal; stealth and weather have their own tests.
     w.stealthOff = true;
     w.wind = 0;
+    if (w.combat) w.combat.harmless = !this.lethal;
     this.session.update(1 / 60, this.pad);
     this.pad.endFrame();
     w.fx.length = 0;

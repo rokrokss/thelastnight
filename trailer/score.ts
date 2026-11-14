@@ -299,6 +299,42 @@ export class Score {
     this.hiss(t - 0.16, 0.16, 0.24, 0.05 * gain, 'bandpass', 600, 0.8, this.wet, 3200);
   }
 
+  /** Something very large, calling: a low voice that falls and shudders, mostly heard in the hall. */
+  private call(t: number, gain: number): void {
+    for (const [f0, f1, level] of [
+      [196, 82, 0.1],
+      [147, 61, 0.08],
+      [98, 49, 0.12],
+    ] as const) {
+      const o = this.ctx.createOscillator();
+      const lp = this.ctx.createBiquadFilter();
+      const g = this.ctx.createGain();
+      const trem = this.ctx.createOscillator();
+      const tg = this.ctx.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f0, t);
+      o.frequency.exponentialRampToValueAtTime(f1, t + 2.2);
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(900, t);
+      lp.frequency.exponentialRampToValueAtTime(260, t + 2.2);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(level * gain, t + 0.35);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 2.4);
+      trem.frequency.value = 11;
+      tg.gain.value = level * gain * 0.5;
+      trem.connect(tg);
+      tg.connect(g.gain);
+      o.connect(lp);
+      lp.connect(g);
+      g.connect(this.wet);
+      g.connect(this.out);
+      o.start(t);
+      trem.start(t);
+      o.stop(t + 2.5);
+      trem.stop(t + 2.5);
+    }
+  }
+
   // ------------------------------------------------------------ patterns
   private bars(from: number, chords: Chord[], each: (bar: number, c: Chord, i: number) => void): void {
     chords.forEach((c, i) => each(from + i, c, i));
@@ -441,11 +477,28 @@ export class Score {
     for (let s = 16; s < 32; s++) this.snare(at(25) + s * (S / 2), 0.5 + (s - 16) * 0.035);
     this.riser(at(24, 8), at(26), 1.1);
 
-    // The break (26-27): one hit, then nothing but a high, thin note and the hall.
-    this.boom(at(26), 1.25);
+    // The Undertow (26-29): the pulse stops being a dance and becomes footsteps.
+    // A semitone grinds in the low strings, and something calls from the water.
+    this.boom(at(26), 1.3);
+    for (let bar = 26; bar < 30; bar++) {
+      this.pad(at(bar), BAR, [33, 40, 45, 46], 1.2, 520 + (bar - 26) * 160);
+      this.bass(at(bar), 21 + 12, BAR * 0.9, 1.1);
+      this.beat(bar, 'x.........x.....', NONE, NONE, 1.1);
+      this.boom(at(bar, 8), 0.7);
+      if (bar > 26) this.boom(at(bar), 0.9);
+      for (let st = 0; st < 16; st += 4) this.hat(at(bar, st + 2), 0.3);
+    }
+    this.call(at(26, 6), 1);
+    this.call(at(28, 4), 1.2);
+    for (let st = 8; st < 16; st++) this.snare(at(29, st), 0.4 + (st - 8) * 0.08);
+    this.swell(at(28, 8), at(30), [33, 45, 52, 57, 64], 1.2);
+    this.riser(at(29), at(30), 1.1);
+
+    // The break (30-31): one hit, then nothing but a high, thin note and the hall.
+    this.boom(at(30), 1.25);
     {
-      const t0 = at(26) + 0.9;
-      const t1 = at(28) - 0.3;
+      const t0 = at(30) + 0.9;
+      const t1 = at(32) - 0.3;
       for (const [n, level] of [
         [88, 0.02],
         [95, 0.008],
@@ -464,15 +517,15 @@ export class Score {
         o.stop(t1 + 0.05);
       }
     }
-    this.swell(at(27, 6), at(28), [48, 55, 60, 64, 67], 1.1);
-    this.riser(at(27, 8), at(28), 0.6);
+    this.swell(at(31, 6), at(32), [48, 55, 60, 64, 67], 1.1);
+    this.riser(at(31, 8), at(32), 0.6);
 
-    // On the air (28-31): the relative major, and the theme at last, twice, the second time higher.
+    // On the air (32-35): the relative major, and the theme at last, twice, the second time higher.
     const C2: Chord = { root: 36, pad: [48, 55, 60, 64, 67, 72], arp: [60, 64, 67, 72, 76, 79] };
     const G2: Chord = { root: 43, pad: [55, 59, 62, 67, 71], arp: [59, 62, 67, 71, 74, 79] };
     const Am2: Chord = { root: 33, pad: [57, 60, 64, 69, 72], arp: [57, 60, 64, 69, 72, 76] };
     const F2: Chord = { root: 41, pad: [53, 57, 60, 65, 69], arp: [57, 60, 65, 69, 72, 77] };
-    this.bars(28, [C2, G2, Am2, F2], (bar, c, i) => {
+    this.bars(32, [C2, G2, Am2, F2], (bar, c, i) => {
       this.pad(at(bar), BAR, c.pad, 1.15, 2800);
       this.bass(at(bar), c.root, BAR * 0.95, 1);
       this.pulse(bar, c, 0.7);
@@ -480,17 +533,17 @@ export class Score {
       this.beat(bar, 'x.....x...o.....', '........x.......', 'x.x.x.x.x.x.x.x.', 1);
       this.boom(at(bar), i === 0 ? 1.2 : 0.55);
     });
-    this.theme(at(28), 2, 12, 1.1, 'bell');
-    this.theme(at(30), 2, 24, 0.9, 'bell');
-    this.theme(at(30), 2, 12, 0.8, 'bell');
-    for (let s = 8; s < 16; s++) this.snare(at(31, s), 0.4 + (s - 8) * 0.07);
-    this.riser(at(31, 4), at(32), 0.9);
+    this.theme(at(32), 2, 12, 1.1, 'bell');
+    this.theme(at(34), 2, 24, 0.9, 'bell');
+    this.theme(at(34), 2, 12, 0.8, 'bell');
+    for (let st = 8; st < 16; st++) this.snare(at(35, st), 0.4 + (st - 8) * 0.07);
+    this.riser(at(35, 4), at(36), 0.9);
 
-    // SKYWAVE (32-33): the last chord, and the call-sign once, plainly, the way the game plays it.
-    this.boom(at(32), 1.3);
-    this.pad(at(32), 3.2, [48, 55, 60, 62, 64, 67], 1.1, 2000);
-    this.bass(at(32), 36, 4, 1);
-    this.theme(at(32, 4), 1, 12, 1, 'signal');
-    this.bell(at(33, 4) + 0.1, 88, 0.7, 2.4);
+    // SKYWAVE (36-37): the last chord, and the call-sign once, plainly, the way the game plays it.
+    this.boom(at(36), 1.3);
+    this.pad(at(36), 3.2, [48, 55, 60, 62, 64, 67], 1.1, 2000);
+    this.bass(at(36), 36, 4, 1);
+    this.theme(at(36, 4), 1, 12, 1, 'signal');
+    this.bell(at(37, 4) + 0.1, 88, 0.7, 2.4);
   }
 }

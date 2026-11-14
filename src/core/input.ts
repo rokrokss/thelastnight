@@ -1,4 +1,4 @@
-export type Action = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'pause' | 'confirm' | 'cancel';
+export type Action = 'left' | 'right' | 'up' | 'down' | 'jump' | 'interact' | 'fire' | 'pause' | 'confirm' | 'cancel';
 
 /** What the simulation reads. The browser, a gamepad, touch buttons or a test script can all provide it. */
 export interface Controls {
@@ -20,7 +20,8 @@ const KEYMAP: Record<string, Action[]> = {
   KeyK: ['jump'],
   KeyE: ['interact', 'confirm'],
   KeyX: ['interact', 'confirm'],
-  KeyJ: ['interact'],
+  KeyF: ['fire'],
+  KeyJ: ['fire'],
   Enter: ['confirm', 'interact'],
   NumpadEnter: ['confirm', 'interact'],
   Escape: ['pause', 'cancel'],
@@ -101,6 +102,7 @@ export class Input implements Controls {
         pad.add('confirm');
       }
       if (b(1)) pad.add('cancel');
+      if (b(1) || b(7)) pad.add('fire');
       if (b(9)) pad.add('pause');
       break;
     }

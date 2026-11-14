@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { VIEW_H, VIEW_W } from '../src/core/constants';
 import { ScriptedControls } from '../src/core/input';
+import { SHIFT_Y } from '../src/game/camera';
 import { Director, type Presenter } from '../src/game/director';
 import { LevelBuilder } from '../src/game/level';
 import { World } from '../src/game/world';
@@ -159,6 +160,28 @@ describe('camera', () => {
     expect(Math.abs(p.roll)).toBeLessThan(0.01);
     expect(Math.abs(p.rack)).toBeLessThan(0.01);
     expect(p.zoom).toBeLessThan(1.3);
+  });
+
+  it('shifts the lens for a shot without moving what the frame is centred on, and gives it back', async () => {
+    const { w, d, run } = setup();
+    d.cut({ x: 500, y: 400, zoom: 1.2, shiftX: 80, shiftY: -150 });
+    let p = w.camera.pose;
+    expect([p.x, p.y]).toEqual([500, 400]);
+    expect([p.shiftX, p.shiftY]).toEqual([80, -150]);
+    // A later shot that says nothing about the lens keeps it where it was.
+    d.cut({ zoom: 1.6 });
+    p = w.camera.pose;
+    expect([p.shiftX, p.shiftY]).toEqual([80, -150]);
+    // Travelling to a shot eases the lens over with everything else.
+    void d.move({ shiftX: 0, shiftY: -30 }, 1, 'linear');
+    await run(0.5);
+    expect(w.camera.pose.shiftY).toBeGreaterThan(-110);
+    expect(w.camera.pose.shiftY).toBeLessThan(-70);
+    // Back in play, the horizon returns to its everyday place.
+    d.release(0.5);
+    await run(3);
+    expect(w.camera.pose.shiftY).toBeCloseTo(SHIFT_Y, 0);
+    expect(Math.abs(w.camera.pose.shiftX)).toBeLessThan(25);
   });
 
   it('a glance leans toward its target without losing the player, then lets go by itself', async () => {

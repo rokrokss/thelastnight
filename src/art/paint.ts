@@ -1,6 +1,7 @@
-import { mix, rgb, shade } from '../core/color';
-import { clamp01, fbm, Rng, valueNoise } from '../core/math';
+import { mix, shade } from '../core/color';
+import { Rng } from '../core/math';
 import { Art, type Ctx } from '../gfx/art';
+import type { WorldBuilder } from '../gfx/world';
 import type { Flicker, LevelData, LightDef } from '../game/level';
 import { GLOW, RAMP, type GlowName } from './palette';
 
@@ -38,6 +39,8 @@ export interface PaintCtx {
   /** Origin of world (0, 0) inside the mask canvas (same as the play surfaces). */
   ox: number;
   oy: number;
+  /** Where floors and the sides and tops of things go. */
+  depth: WorldBuilder;
 }
 
 export const glow = (name: string | undefined, fallback: GlowName = 'warm'): string =>
@@ -314,65 +317,21 @@ export function bulbString(c: PaintCtx, a: Art, x0: number, y0: number, x1: numb
 // ---------------------------------------------------------------------------
 
 /** Wet street: asphalt band below the walking line, with patchy reflectivity and puddles. */
-export function street(c: PaintCtx, x0: number, x1: number, gy: number, bottom: number, seed: number): void {
+/**
+ * The kerb along the walking line. The road itself is not painted here any
+ * more: it is a real plane in the scene's depth (see art/depth.ts), so it
+ * can run toward the lens and away to the horizon.
+ */
+export function street(c: PaintCtx, x0: number, x1: number, gy: number, _bottom: number, seed: number): void {
   const a = c.back;
-  const y = gy;
-  const h = bottom - gy;
   const w = x1 - x0;
   const as = RAMP.asphalt;
   const pv = RAMP.paving;
   const rng = new Rng(seed);
-  a.dither(x0, y, w, h, as[2], as[0], (_u, v) => clamp01(v * 0.9 + 0.08));
-  // Kerb stones along the walking line.
-  a.rect(x0, y, w, 1, pv[3]);
-  a.rect(x0, y + 1, w, 2, pv[1]);
-  a.rect(x0, y + 3, w, 1, as[0]);
-  for (let i = x0 + rng.int(0, 20); i < x1; i += 24) a.rect(i, y + 1, 1, 2, pv[0]);
-  // Aggregate glinting in the tarmac.
-  a.speckle(x0, y + 4, w, h - 4, as[3], Math.floor((w * h) / 70), () => rng.next());
-  a.speckle(x0, y + 4, w, h - 4, '#0c0d11', Math.floor((w * h) / 90), () => rng.next());
-  // Worn lane paint.
-  for (let i = x0 + rng.int(0, 30); i < x1; i += 58) {
-    const pw = 30;
-    a.dither(i, y + 24, pw, 2, as[1], '#a88f3a', (u) => 0.75 - Math.abs(u - 0.5) * 0.4 - valueNoise(i * 0.3 + u * 9, 0, seed) * 0.5);
-  }
-  // Drain grates and manholes.
-  for (let i = x0 + rng.int(40, 160); i < x1 - 30; i += rng.int(170, 330)) {
-    if (rng.chance(0.5)) {
-      a.rect(i, y + 6, 14, 5, '#0b0c10');
-      for (let k = 1; k < 14; k += 2) a.rect(i + k, y + 7, 1, 3, as[3]);
-    } else {
-      a.rect(i + 2, y + 12, 16, 1, as[3]);
-      a.rect(i, y + 13, 20, 4, '#101218');
-      a.rect(i + 2, y + 17, 16, 1, '#08090c');
-      for (let k = 2; k < 18; k += 3) a.px(i + k, y + 14 + (k % 2), as[3]);
-    }
-  }
-  // Reflectivity: damp everywhere, with standing water in low spots.
-  maskFloor(c, x0, y, w, h, (px, row) => {
-    if (row < 3) return 0.12;
-    const puddle = fbm(px * 0.028, row * 0.11 + 3.1, 3, seed);
-    const damp = 0.34 + 0.2 * valueNoise(px * 0.09, row * 0.3, seed + 5);
-    const wet = puddle > 0.56 ? 1 : puddle > 0.5 ? 0.34 + ((puddle - 0.5) / 0.06) * 0.66 : damp;
-    return wet;
-  });
-  // Puddles read as darker, smoother patches in the albedo too.
-  const img = a.c.getImageData(x0 + a.ox, y + 3 + a.oy, w, Math.min(h - 3, 60));
-  const d = img.data;
-  const dark = rgb(as[0]);
-  for (let row = 0; row < img.height; row++) {
-    for (let i = 0; i < w; i++) {
-      const puddle = fbm((x0 + i) * 0.028, (row + 3) * 0.11 + 3.1, 3, seed);
-      if (puddle > 0.53) {
-        const k = (row * w + i) * 4;
-        const t = Math.min(1, (puddle - 0.53) / 0.04) * 0.75;
-        d[k] = d[k]! + (dark[0] - d[k]!) * t;
-        d[k + 1] = d[k + 1]! + (dark[1] - d[k + 1]!) * t;
-        d[k + 2] = d[k + 2]! + (dark[2] - d[k + 2]!) * t;
-      }
-    }
-  }
-  a.c.putImageData(img, x0 + a.ox, y + 3 + a.oy);
+  a.rect(x0, gy, w, 1, pv[3]);
+  a.rect(x0, gy + 1, w, 2, pv[1]);
+  a.rect(x0, gy + 3, w, 1, as[0]);
+  for (let i = x0 + rng.int(0, 20); i < x1; i += 24) a.rect(i, gy + 1, 1, 2, pv[0]);
 }
 
 // ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+import { combatFx } from '../art/combat';
 import { AudioSys } from '../audio/audio';
 import { CHAPTERS, CREDITS, ENDINGS, FIRST_CHAPTER, ORDER, titleChapter } from '../content';
 import { Input, type Action, type Controls } from '../core/input';
@@ -336,7 +337,7 @@ export class Game {
   }
 
   private onFail(reason: FailReason): void {
-    this.audio.sfx(reason === 'caught' ? 'caught' : 'fell');
+    this.audio.sfx(reason === 'caught' ? 'caught' : reason === 'downed' ? 'downed' : 'fell');
     this.session?.world.camera.addShake(reason === 'caught' ? 0.5 : 0.8);
   }
 
@@ -362,7 +363,8 @@ export class Game {
     if (this.mode !== 'play' || this.busy) return;
     this.paused = true;
     this.ui.showVeil(true);
-    this.ui.setHint('ARROWS / WASD  MOVE     SPACE  JUMP     E  USE     DOWN  HIDE     ESC  PAUSE');
+    const armed = this.session?.world.combat?.armed;
+    this.ui.setHint(`ARROWS / WASD  MOVE     SPACE  JUMP     E  USE     ${armed ? 'F  FIRE     DOWN  COVER' : 'DOWN  HIDE'}     ESC  PAUSE`);
     this.audio.sfx('ui_back', 0.6);
     const resume = (): void => {
       this.ui.closeAllMenus();
@@ -479,6 +481,11 @@ export class Game {
         zoomFg: 1,
         fgFade: 1,
         roll: 0,
+        vanX: 0,
+        vanY: 0,
+        camX: 0,
+        camY: 0,
+        world: null,
         wipe: 0,
         fracX: 0,
         fracY: 0,
@@ -536,6 +543,8 @@ export class Game {
           this.audio.sfx('spark');
           v.burst('spark', f.x, f.y, 10);
           break;
+        default:
+          combatFx(f, this.audio, v, w);
       }
     }
     w.fx.length = 0;
@@ -547,10 +556,13 @@ export class Game {
     if (this.mode !== 'play' || this.paused) {
       this.ui.setPrompt(null);
       this.ui.setDetect(0);
+      this.ui.setCombat(null);
       return;
     }
     this.ui.setDetect(w.failed ? 0 : w.detect);
     this.ui.setHud(w.locked <= 0 && s.director.cine.letterbox < 0.01);
+    const c = w.combat;
+    this.ui.setCombat(c && c.armed && !w.failed ? { hp: c.hp, pressure: c.pressure, hurt: c.invuln > 0.3 } : null);
     if (s.director.busy > 0 || w.locked > 0) {
       this.ui.setPrompt(null);
       return;

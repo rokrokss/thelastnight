@@ -26,6 +26,7 @@ export const SPEAKERS: Record<string, Speaker> = {
   mime: { name: 'MIME', color: '#e8e4dc', pitch: 1.2 },
   alert: { name: 'MERIDIAN ASSURE', color: '#ff8a7a', pitch: 1.1, radio: true },
   dispatch: { name: 'DISPATCH', color: '#8fc8ff', pitch: 0.9, radio: true },
+  unit: { name: 'ENFORCER', color: '#ff8a7a', pitch: 0.5, radio: true },
   city: { name: 'SALTGATE', color: '#b8c4d8', pitch: 1.0, radio: true },
 };
 

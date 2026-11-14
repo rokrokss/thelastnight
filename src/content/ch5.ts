@@ -92,10 +92,11 @@ export const dawn: Chapter = {
     d.lock();
     await d.bars(true, 0);
     // First light: a long level track down the street with the far roofs sharp, before it finds her.
-    d.cut({ x: 2240, y: 110, zoom: 1.3, rack: -1, roll: 0 });
+    d.cut({ x: 2240, y: 150, zoom: 1.15, rack: -1, roll: 0, shiftX: -70, shiftY: -150 });
     await d.wait(0.6);
     void d.fade(0, 3, [1, 0.96, 0.9]);
-    d.drift({ x: 2550, y: 132, zoom: 1.1, rack: -0.2 }, 7.5, 'linear');
+    // Morning seen from above the street, coming down to walk it.
+    d.drift({ x: 2550, y: 160, zoom: 1.1, rack: -0.2, shiftX: 0, shiftY: -30 }, 7.5, 'linear');
     await d.card('EPILOGUE', 'DAWN', 'The water came. So did the warning.');
     d.drift({ on: 'sol', zoom: 1.35, dx: -34, dy: -10, rack: 0 }, 2.4);
     await d.walk('sol', 2640, 30);

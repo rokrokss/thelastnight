@@ -6,22 +6,28 @@ import { LevelBuilder, type LevelData } from '../game/level';
 export function buildLanes(): LevelData {
   const G = 214;
   const W = 3000;
-  const b = new LevelBuilder('lanes', 'market', W, 270, G, 1107);
+  // The level is 44px taller than the view: the camera rides low, so the road fills the foot of the frame.
+  const b = new LevelBuilder('lanes', 'market', W, 314, G, 1107);
   b.solid(-200, G, W + 400, 200, 'street');
   b.solid(-40, -300, 40, 600, 'none');
   b.solid(W, -300, 40, 600, 'none');
   b.spawn(64, G, 1);
   b.weather({ rain: 0.42, wind: 0.14, fog: 0.4 });
-  b.camZone({ x: -200, y: -300, w: W + 400, h: 900, lockY: 0 });
+  b.camZone({ x: -200, y: -300, w: W + 400, h: 900, lockY: 44 });
 
   const F = (x: number, w: number, variant: number, text?: string, color?: string, h?: number): void => {
     b.prop('facade', x, G, { w, variant, text, color, h });
   };
-  const stall = (x: number, w: number, text: string, color: string, seats: (string | null)[] = []): void => {
+  /** A customer on a stool: an id (which is also the look), or [id, look] for one of the named regulars. */
+  type Seat = string | [string, string] | null;
+  const stall = (x: number, w: number, text: string, color: string, seats: Seat[] = []): void => {
     b.prop('stall', x, G, { w, text, color });
     const [s0, s1] = stallSeats(x, w);
-    if (seats[0]) b.npc({ id: seats[0], x: s0 + 4, y: G, look: seats[0], anim: 'sit', facing: 1, extra: true });
-    if (seats[1]) b.npc({ id: seats[1], x: s1 + 4, y: G, look: seats[1], anim: 'sit', facing: -1, extra: true });
+    seats.forEach((seat, i) => {
+      if (!seat || i > 1) return;
+      const [id, look] = typeof seat === 'string' ? [seat, seat] : seat;
+      b.npc({ id, x: (i === 0 ? s0 : s1) + 4, y: G, look, anim: 'sit', facing: i === 0 ? 1 : -1, extra: true });
+    });
   };
 
   // --- Zone A: arrival ---
@@ -37,8 +43,8 @@ export function buildLanes(): LevelData {
   // --- Zone B: first lot ---
   b.prop('fence', 362, G, { w: 398, h: 46 });
   b.prop('lamp', 384, G, { flip: true });
-  stall(408, 82, 'FISH CAKE', 'tarpRed', ['c11', 'c12']);
-  stall(532, 72, 'TEA', 'tarpBlue', [null, 'c13']);
+  stall(408, 82, 'FISH CAKE', 'tarpRed', ['c11', ['c12', 'suit_f']]);
+  stall(532, 72, 'TEA', 'tarpBlue', [null, ['c13', 'elder_f']]);
   b.prop('bulbs', 398, 150, { w: 220, h: -4, variant: 9, color: 'warm' });
   b.prop('crates', 622, G);
   b.prop('vending', 668, G, { color: 'cyan' });
@@ -60,7 +66,8 @@ export function buildLanes(): LevelData {
   // --- Zone D: Baek's lot ---
   b.prop('fence', 1104, G, { w: 380, h: 44 });
   b.prop('lamp', 1126, G);
-  stall(1186, 88, 'NOODLES', 'tarpOrange', ['c14', null]);
+  // Baek's one regular: a docker off shift, stripped to the waist over his bowl.
+  stall(1186, 88, 'NOODLES', 'tarpOrange', [['c14', 'heavy_m'], null]);
   b.prop('bulbs', 1150, 152, { w: 170, h: 2, variant: 8, color: 'warm' });
   b.npc({ id: 'baek', x: 1228, y: G, look: 'baek', anim: 'cook', facing: 1, behind: true, prompt: 'Talk' });
   b.solid(1322, G - 28, 42, 28, 'crate', true);
@@ -87,7 +94,7 @@ export function buildLanes(): LevelData {
   F(1870, 122, SHOP.store, 'PHARMACY', 'green');
   F(1992, 100, SHOP.shutter, 'LOCKSMITH');
   b.prop('fence', 2092, G, { w: 240, h: 44 });
-  stall(2118, 80, 'SKEWERS', 'tarpOrange', ['c15', 'c16']);
+  stall(2118, 80, 'SKEWERS', 'tarpOrange', [['c15', 'swim_m'], ['c16', 'teen_m']]);
   b.npc({ id: 'vendor3', x: 2160, y: G, look: 'c23', anim: 'cook', facing: 1, extra: true, behind: true });
   b.solid(2236, G - 14, 28, 14, 'crate');
   b.oneWay(2278, 166, 62, 'awning');
@@ -111,11 +118,22 @@ export function buildLanes(): LevelData {
   b.prop('scooter', 2560, G);
 
   // Passers-by.
-  b.npc({ id: 'c1', x: 180, y: G, look: 'c1', patrol: [150, 350], speed: 22, extra: true });
-  b.npc({ id: 'c2', x: 900, y: G, look: 'c2', patrol: [770, 1090], speed: 26, extra: true });
-  b.npc({ id: 'c3', x: 1560, y: G, look: 'c3', patrol: [1500, 1700], speed: 20, extra: true });
-  b.npc({ id: 'c4', x: 2400, y: G, look: 'c4', patrol: [2340, 2700], speed: 24, extra: true });
-  b.npc({ id: 'c5', x: 520, y: G, look: 'c5', patrol: [380, 740], speed: 18, extra: true });
+  b.npc({ id: 'c1', x: 180, y: G, look: 'elder_m', patrol: [150, 350], speed: 13, extra: true });
+  b.npc({ id: 'c2', x: 900, y: G, look: 'heavy_f', patrol: [770, 1090], speed: 20, extra: true });
+  b.npc({ id: 'c3', x: 1560, y: G, look: 'market_f', patrol: [1500, 1700], speed: 20, extra: true });
+  b.npc({ id: 'c4', x: 2400, y: G, look: 'teen_f', patrol: [2340, 2700], speed: 26, extra: true });
+  b.npc({ id: 'c5', x: 520, y: G, look: 'suit_m', patrol: [380, 740], speed: 24, extra: true });
+
+  // People at other depths: on the far pavement, crossing the road, passing close to the lens.
+  b.npc({ id: 'far1', x: 620, y: G, look: 'rain_f', patrol: [300, 1250], speed: 20, extra: true, z: 292 });
+  b.npc({ id: 'far2', x: 1520, y: G, look: 'tall_m', patrol: [1180, 2150], speed: 24, extra: true, z: 296 });
+  b.npc({ id: 'far3', x: 2300, y: G, look: 'fisher_m', patrol: [1900, 2850], speed: 18, extra: true, z: 290 });
+  b.npc({ id: 'far4', x: 1000, y: G, look: 'kid_m', patrol: [700, 1650], speed: 30, extra: true, z: 300 });
+  b.npc({ id: 'road1', x: 1350, y: G, look: 'jog_f', patrol: [500, 2300], speed: 62, extra: true, z: -70 });
+  b.npc({ id: 'near1', x: 900, y: G, look: 'swim_f', patrol: [150, 1800], speed: 28, extra: true, z: -150 });
+  b.npc({ id: 'near2', x: 2050, y: G, look: 'dock_m', patrol: [1300, 2900], speed: 27, extra: true, z: -185 });
+  b.npc({ id: 'road2', x: 2250, y: G, look: 'c7', patrol: [1500, 2800], speed: 19, extra: true, z: -52 });
+  b.npc({ id: 'road3', x: 700, y: G, look: 'kid_f', patrol: [300, 1400], speed: 34, extra: true, z: -36 });
 
   // Story hooks.
   b.trigger('vista', 372, 0, 30, 270);

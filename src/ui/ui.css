@@ -226,6 +226,74 @@
   background: #ff4b3a;
 }
 
+/* Health and the rivet gun's pressure, while Sol is armed. */
+.combat {
+  position: absolute;
+  left: calc(var(--px) * 12);
+  top: calc(var(--px) * 24);
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 6);
+  white-space: nowrap;
+  color: #9aa7b8;
+  text-shadow: var(--u) var(--u) 0 #05070c;
+  opacity: 0;
+  transition: opacity 0.3s linear;
+}
+
+.combat.on {
+  opacity: 0.95;
+}
+
+.combat .hp,
+.combat .gun {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+}
+
+.combat .hp {
+  margin-right: calc(var(--u) * 6);
+}
+
+.combat i {
+  display: block;
+  box-shadow: 0 0 0 var(--u) rgba(5, 8, 14, 0.75);
+}
+
+.combat .hp > i {
+  width: calc(var(--u) * 8);
+  height: calc(var(--u) * 8);
+  background: #ffb46a;
+}
+
+.combat .gun > i {
+  width: calc(var(--u) * 3);
+  height: calc(var(--u) * 9);
+  background: #e9eef4;
+}
+
+.combat i.off {
+  background: rgba(233, 238, 244, 0.14);
+}
+
+.combat.hurt .hp > i:not(.off) {
+  background: #ff4b3a;
+}
+
+.combat.dry .gun > i {
+  animation: build 0.45s steps(2) infinite;
+}
+
+@keyframes build {
+  0% {
+    background: rgba(233, 238, 244, 0.14);
+  }
+  100% {
+    background: rgba(255, 179, 71, 0.6);
+  }
+}
+
 .danger {
   position: absolute;
   inset: 0;

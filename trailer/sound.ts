@@ -65,9 +65,10 @@ export async function bounce(film: Film, heard: Heard[], air: Air[]): Promise<Au
     [17, 1.45],
     [19, 1.3],
     [20, 1.75],
-    [26, 1.5],
-    [28, 2.05],
-    [32, 1.9],
+    [26, 1.6],
+    [30, 1.5],
+    [32, 2.05],
+    [36, 1.9],
   ] as const) {
     music.gain.setTargetAtTime(level, bar * BAR - 0.05, 0.12);
   }

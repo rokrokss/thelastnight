@@ -6,7 +6,9 @@
  *   npm run trailer -- --draft   960x540, 30 fps (quick look at the cut)
  *   npm run trailer -- --sheet   contact sheets only: a few frames from every take
  *   npm run trailer -- --sheet --only=fog,market
+ *   npm run trailer -- --cast    model sheets: every character in a few poses
  *   npm run trailer -- --audio   the soundtrack only (trailer/out/skywave-trailer.wav)
+ *   npm run trailer -- --out=dir write somewhere other than trailer/out
  *   npm run trailer -- --crf=15  larger file, for an upload master
  *
  * How it works: this script serves the project with Vite, opens
@@ -25,17 +27,18 @@ const args = process.argv.slice(2);
 const flag = (n) => args.includes(`--${n}`);
 const opt = (n, d) => args.find((a) => a.startsWith(`--${n}=`))?.slice(n.length + 3) ?? d;
 
-const mode = flag('sheet') ? 'sheet' : flag('audio') ? 'audio' : 'render';
+const mode = flag('sheet') ? 'sheet' : flag('cast') ? 'cast' : flag('audio') ? 'audio' : 'render';
 const draft = flag('draft');
 const W = Number(opt('w', draft ? 960 : 1920));
 const H = Number(opt('h', draft ? 540 : 1080));
 const FPS = Number(opt('fps', draft ? 30 : 60));
 const only = opt('only', '');
+const cell = opt('cell', '');
 // x264 quality: 18 keeps the film grain and stays a shareable size; pass --crf=15 for an upload master.
 const crf = opt('crf', draft ? '21' : '18');
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const outDir = join(root, 'trailer', 'out');
+const outDir = resolve(root, opt('out', join('trailer', 'out')));
 mkdirSync(outDir, { recursive: true });
 const name = draft ? 'skywave-trailer-draft' : 'skywave-trailer';
 const silent = join(outDir, `${name}.video.mp4`);
@@ -74,12 +77,19 @@ const run = (cmd, argv) =>
     p.on('exit', (code) => (code === 0 ? ok() : bad(new Error(`${cmd} exited with ${code}\n${err.slice(-2000)}`))));
   });
 
+let finishing = false;
+
 async function finish(code) {
+  if (finishing) return;
+  finishing = true;
   try {
     chrome?.kill('SIGKILL');
   } catch {}
   await server?.close().catch(() => undefined);
-  if (profile) rmSync(profile, { recursive: true, force: true });
+  // Chrome may still be letting go of its profile for a moment after it is killed.
+  try {
+    if (profile) rmSync(profile, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 });
+  } catch {}
   process.exit(code);
 }
 
@@ -90,6 +100,12 @@ async function handle(req, res) {
   const data = await body(req);
   if (what === 'begin') {
     const info = JSON.parse(data.toString());
+    if (ffmpeg) {
+      // The page started over: drop the half-written video and begin again.
+      ffmpeg.removeAllListeners('exit');
+      ffmpeg.kill('SIGKILL');
+      got = 0;
+    }
     total = info.frames;
     started = Date.now();
     console.log(`rendering ${info.frames} frames at ${info.w}x${info.h}, ${info.fps} fps  (GPU: ${info.gpu})`);
@@ -160,7 +176,8 @@ server = await createServer({
   base: './',
   logLevel: 'warn',
   cacheDir: join(root, 'node_modules', '.vite-trailer'),
-  server: { port: Number(opt('port', 5199)), strictPort: false, host: '127.0.0.1' },
+  // No file watching: an edit elsewhere in the project must not reload the page in the middle of a render.
+  server: { port: Number(opt('port', 5199)), strictPort: false, host: '127.0.0.1', hmr: false, watch: null },
   plugins: [
     {
       name: 'trailer-sink',
@@ -179,7 +196,7 @@ server = await createServer({
 await server.listen();
 const port = server.config.server.port;
 const address = server.httpServer.address();
-const page = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : port}/trailer.html?mode=${mode}&w=${W}&h=${H}&fps=${FPS}${only ? `&only=${only}` : ''}`;
+const page = `http://127.0.0.1:${typeof address === 'object' && address ? address.port : port}/trailer.html?mode=${mode}&w=${W}&h=${H}&fps=${FPS}${only ? `&only=${only}` : ''}${cell ? `&cell=${cell}` : ''}`;
 
 profile = mkdtempSync(join(tmpdir(), 'skywave-trailer-'));
 chrome = spawn(
@@ -205,6 +222,7 @@ chrome = spawn(
 chrome.on('exit', () => {
   // Chrome going away before the page reports in means nothing more will arrive.
   setTimeout(() => {
+    if (finishing) return;
     console.error('Chrome exited before the render finished.');
     void finish(1);
   }, 500);

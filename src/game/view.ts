@@ -1,6 +1,7 @@
 import { PAD, TEX_H, TEX_W, VIEW_H, VIEW_W } from '../core/constants';
 import { shade, vec3 } from '../core/color';
 import { clamp, hash2, lerp, smoothstep, valueNoise } from '../core/math';
+import { combatLights, drawCombatBack, drawCombatFront } from '../art/combat';
 import { GLOW, lookFor, RAMP } from '../art/palette';
 import {
   drawPuppet,
@@ -16,7 +17,9 @@ import type { SceneArt } from '../art/scene';
 import { Art } from '../gfx/art';
 import type { FrameParams, Light, Look, Vec3 } from '../gfx/renderer';
 import type { Stage } from '../gfx/stage';
+import type { WorldGeo } from '../gfx/world';
 import type { Flicker, LightDef } from './level';
+import { SHIFT_Y } from './camera';
 import type { Drone, Mover, World } from './world';
 
 /** Offsets a scene can lay over the chapter's look (all 0 = unchanged). */
@@ -124,12 +127,16 @@ export class View {
   private camY = 0;
   private zoom = 1;
   private roll = 0;
+  /** The scene's depth geometry, built once (null if the scene has none). */
+  private world: WorldGeo | null;
 
   constructor(art: SceneArt, world: World) {
     this.art = art;
     this.lights = art.lights.map((d, i) => ({ d, rgb: vec3(d.color, d.k ?? 1), seed: (i * 7919 + 13) | 0 }));
     this.emitAcc = art.emitters.map(() => 0);
     this.look = { ...art.look };
+    const geo = art.depth.build();
+    this.world = geo.count > 0 ? geo : null;
     for (const s of world.level.solids) this.tops.push({ x0: s.x, x1: s.x + s.w, y: s.y });
     for (const o of world.level.oneWays) this.tops.push({ x0: o.x, x1: o.x + o.w, y: o.y });
     for (let i = 0; i < 170; i++) {
@@ -170,6 +177,7 @@ export class View {
     t: number,
     vx: number,
     dt: number,
+    z = 0,
   ): void {
     const sp = this.spring(id);
     const prev = this.lastVx.get(id) ?? vx;
@@ -187,7 +195,9 @@ export class View {
       blink: (t * 0.31 + (id.length % 5) * 0.17) % 1 > 0.965,
     });
     const flip = facing < 0;
-    st.sprite(p, flip ? x - (PUPPET_W - 1 - PUPPET_OX) : x - PUPPET_OX, y - PUPPET_OY, flip);
+    const left = flip ? x - (PUPPET_W - 1 - PUPPET_OX) : x - PUPPET_OX;
+    if (z !== 0 && this.world) st.depthSprite(p, left, y - PUPPET_OY, z, flip);
+    else st.sprite(p, left, y - PUPPET_OY, flip);
   }
 
   private drawDrone(st: Stage, d: Drone): void {
@@ -257,7 +267,15 @@ export class View {
     this.camY = camY;
     this.zoom = cam.zoom;
     this.roll = cam.roll + (valueNoise(t * 0.21, 8.1) - 0.5) * 0.0035 * hh + (sh > 0 ? (valueNoise(t * 29, 4.4) - 0.5) * 0.02 * sh : 0);
-    st.begin(camX, camY);
+    // The lens sits on whatever point of the play plane the vanishing point covers.
+    // (A scene with no depth geometry is still a flat stage: its lens stays centred.)
+    const vanX = this.world ? cam.shiftX : 0;
+    const vanY = this.world ? cam.shiftY : 0;
+    const eyeX = camX + vanX / cam.zoom;
+    const eyeY = camY + vanY / cam.zoom;
+    st.lift = this.world ? (this.art.lift ?? w.level.groundY - (w.level.height - VIEW_H) - VIEW_H / 2) : 0;
+    st.restY = this.world ? SHIFT_Y : 0;
+    st.begin(camX, camY, eyeX, eyeY, vanX, vanY);
     const art = this.art;
     const weather = w.weather;
 
@@ -285,6 +303,7 @@ export class View {
         st.rect(m.x + m.w - 4, m.y - 400, 1, 400, '#0c0e12');
       }
     }
+    drawCombatBack(st, w, t);
 
     for (const ind of art.indicators) {
       const v = w.signals[ind.id] ?? 0;
@@ -311,8 +330,10 @@ export class View {
     for (let pass = 0; pass < 2; pass++) {
       for (const a of w.actors) {
         if (!a.visible || a.behind !== (pass === 0)) continue;
-        if (a.x < camX - 40 || a.x > camX + VIEW_W + 40) continue;
-        this.drawFigure(st, a.id, lookFor(a.look), a.x, a.y, a.facing, a.anim, a.phase, a.t, 0, dt);
+        // (Someone at depth can be in frame from much further along the street.)
+        const reach = a.z !== 0 ? 420 : 40;
+        if (a.x < camX - reach || a.x > camX + VIEW_W + reach) continue;
+        this.drawFigure(st, a.id, lookFor(a.look), a.x, a.y, a.facing, a.anim, a.phase, a.t, 0, dt, a.z);
       }
       if (pass === 0) st.strip(art.mid, -PAD, -PAD);
     }
@@ -320,11 +341,12 @@ export class View {
 
     const p = w.player;
     const hideFade = p.hidden ? 0.55 : 1;
-    if (p.state !== 'dead' || w.failed === 'caught') {
+    if (p.state !== 'dead' || w.failed === 'caught' || w.failed === 'downed') {
       const look = lookFor('sol');
       this.drawFigure(st, 'sol', look, p.drawX, p.drawY, p.facing, p.anim, p.phase, p.t, p.vx, dt);
       if (hideFade < 1) st.rect(p.cx - 9, p.feet - 24, 18, 24, '#04050a', 0.34);
     }
+    drawCombatFront(st, w, t);
 
     st.strip(art.front, -PAD, -PAD);
 
@@ -353,6 +375,8 @@ export class View {
         outer: d.cone?.outer,
         shadow: d.shadow,
         falloff: d.falloff,
+        // Lamps hang a little out over the ground, so their pools land in front of the walls.
+        z: d.z ?? -10,
       });
     }
     for (const d of w.drones) {
@@ -409,6 +433,7 @@ export class View {
         lights.push({ x: ind.x - camX, y: ind.y - camY, r: 90, color: [1.3 * k, 0.28 * k, 0.2 * k] });
       } else lights.push({ x: ind.x - camX, y: ind.y - camY, r: 70, color: [0.25, 0.9, 0.85] });
     }
+    combatLights(w, camX, camY, t, lights);
 
     // ---- storm ----
     if (weather.storm) {
@@ -477,6 +502,21 @@ export class View {
       zoomFg,
       fgFade: 1 - smoothstep(2.0, 3.2, zoomFg),
       roll: this.roll,
+      vanX,
+      vanY,
+      camX,
+      camY,
+      world: this.world
+        ? {
+            geo: this.world,
+            eyeX: eyeX + VIEW_W / 2,
+            eyeY: eyeY + VIEW_H / 2,
+            blobs: this.shadows(w),
+            sprites: st.sprites,
+            // Focus sits on the play plane unless the lens has been racked toward the foreground or the distance.
+            focusInv: z * (rack > 0 ? 1 + rack * 1.2 : 1 + rack),
+          }
+        : null,
       wipe: cine.wipe,
       fracX: st.fracX,
       fracY: st.fracY,
@@ -488,6 +528,19 @@ export class View {
       fade: cine.fade,
       flash: clamp(cine.flash + (this.reduceFlash ? 0 : this.lightning * 0.1), 0, 1),
     };
+  }
+
+  /** Everyone standing on something, as soft shadows for the world's floors. */
+  private shadows(w: World): [number, number, number, number][] {
+    const out: [number, number, number, number][] = [];
+    const p = w.player;
+    if (p.state !== 'dead' && p.onGround) out.push([p.cx, p.feet, -3, 9]);
+    for (const a of w.actors) {
+      if (!a.visible || out.length >= 16) continue;
+      if (Math.abs(a.x - p.cx) > 420) continue;
+      out.push([a.x, a.y, a.z - 3, 8]);
+    }
+    return out;
   }
 
   // ------------------------------------------------------------------ effects

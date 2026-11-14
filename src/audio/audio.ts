@@ -354,6 +354,144 @@ export class AudioSys {
       case 'spark':
         this.burst(t, 0.001, 0.09, 0.2 * v, 'highpass', 4500, 2, d);
         break;
+
+      // ---- the fight on the quay ----
+      case 'rivet': {
+        // A pneumatic thump, struck steel ringing on top of it, and the air letting go.
+        const r = 0.94 + Math.random() * 0.12;
+        this.burst(t, 0.001, 0.07, 0.22 * v, 'bandpass', 1300 * r, 0.9, d, 500);
+        this.tone('square', 190 * r, t, 0.001, 0.07, 0.12 * v, d, 70);
+        this.tone('triangle', 2350 * r, t + 0.005, 0.001, 0.16, 0.035 * v, d);
+        this.burst(t + 0.02, 0.01, 0.12, 0.04 * v, 'highpass', 5200, 0.8, d);
+        break;
+      }
+      case 'dry':
+        this.burst(t, 0.001, 0.025, 0.12 * v, 'highpass', 3200, 1, d);
+        this.tone('square', 320, t, 0.001, 0.02, 0.04 * v, d);
+        break;
+      case 'recharge':
+        // Air coming back up to pressure, and the valve seating.
+        this.burst(t, 0.08, 0.34, 0.06 * v, 'bandpass', 1800, 1.4, d, 4200);
+        this.tone('square', 660, t + 0.36, 0.001, 0.04, 0.05 * v, d);
+        break;
+      case 'rifle': {
+        const r = 0.92 + Math.random() * 0.16;
+        this.burst(t, 0.001, 0.05, 0.16 * v, 'bandpass', 2600 * r, 1.4, d, 900);
+        this.tone('sawtooth', 420 * r, t, 0.001, 0.06, 0.07 * v, d, 110);
+        break;
+      }
+      case 'ricochet': {
+        const f = 2200 + Math.random() * 1800;
+        this.tone('triangle', f, t, 0.001, 0.22, 0.06 * v, d, f * 0.45);
+        this.burst(t, 0.001, 0.03, 0.1 * v, 'highpass', 4000, 1, d);
+        break;
+      }
+      case 'clank':
+        this.tone('square', 310, t, 0.001, 0.09, 0.1 * v, d, 190);
+        this.tone('triangle', 1240 + Math.random() * 300, t, 0.001, 0.14, 0.06 * v, d);
+        this.burst(t, 0.001, 0.05, 0.14 * v, 'bandpass', 2200, 2, d);
+        break;
+      case 'hit':
+        // Sol is hit: a thud, and a spit of static from her set.
+        this.tone('sine', 150, t, 0.002, 0.16, 0.3 * v, d, 60);
+        this.burst(t, 0.002, 0.12, 0.14 * v, 'bandpass', 1800, 1.2, d, 600);
+        break;
+      case 'heal':
+        this.tone('sine', 660, t, 0.01, 0.16, 0.04 * v, d, 880);
+        break;
+      case 'aim':
+        this.tone('square', 1320, t, 0.002, 0.05, 0.05 * v, d);
+        this.tone('square', 1760, t + 0.07, 0.002, 0.09, 0.05 * v, d);
+        break;
+      case 'wreck':
+        // A machine going down: the power sags out of it, then the plates settle.
+        this.tone('sawtooth', 320, t, 0.005, 0.55, 0.12 * v, d, 38);
+        this.burst(t, 0.002, 0.16, 0.18 * v, 'highpass', 3800, 1.5, d);
+        this.burst(t + 0.28, 0.002, 0.12, 0.16 * v, 'bandpass', 700, 1.2, d);
+        this.tone('square', 96, t + 0.3, 0.002, 0.14, 0.12 * v, d, 50);
+        break;
+      case 'unlatch':
+        this.tone('square', 520, t, 0.001, 0.05, 0.1 * v, d, 240);
+        this.burst(t, 0.001, 0.08, 0.2 * v, 'bandpass', 1500, 3, d);
+        this.tone('triangle', 1900, t + 0.01, 0.001, 0.4, 0.05 * v, wet);
+        break;
+      case 'crash':
+        // Thirty tonnes of box meeting the deck.
+        this.tone('sine', 70, t, 0.003, 0.7, 0.45 * v, d, 26);
+        this.burst(t, 0.002, 0.45, 0.36 * v, 'lowpass', 1400, 0.6, d, 160);
+        this.burst(t + 0.03, 0.01, 0.9, 0.2 * v, 'bandpass', 520, 2.5, wet, 180);
+        this.tone('square', 147, t + 0.02, 0.002, 0.3, 0.12 * v, d, 60);
+        break;
+      case 'downed':
+        this.tone('sine', 120, t, 0.004, 0.6, 0.34 * v, d, 40);
+        this.burst(t, 0.004, 0.35, 0.16 * v, 'bandpass', 1500, 1.5, d, 300);
+        this.tone('sine', 55, t + 0.1, 0.01, 1.0, 0.3 * v, wet, 30);
+        break;
+
+      // ---- the Undertow ----
+      case 'call':
+        // Its voice: something very large, a long way down. Slow tones bending against each other.
+        for (const [f0, f1, at, len, g0] of [
+          [62, 98, 0, 2.6, 0.2],
+          [93, 139, 0.25, 2.4, 0.12],
+          [124, 82, 1.5, 2.2, 0.12],
+        ] as const) {
+          this.tone('sawtooth', f0, t + at, 0.6, len, g0 * 0.5 * v, wet, f1);
+          this.tone('sine', f0, t + at, 0.6, len, g0 * v, d, f1);
+        }
+        this.burst(t + 0.2, 0.9, 2.2, 0.08 * v, 'bandpass', 300, 2, wet, 520);
+        break;
+      case 'roar':
+        // In pain: the same voice, torn.
+        this.tone('sawtooth', 150, t, 0.04, 1.3, 0.2 * v, d, 60);
+        this.tone('sawtooth', 226, t, 0.04, 1.1, 0.12 * v, wet, 84);
+        this.tone('square', 75, t, 0.04, 1.4, 0.16 * v, d, 40);
+        this.burst(t, 0.05, 1.1, 0.2 * v, 'bandpass', 700, 1.4, wet, 240);
+        break;
+      case 'warn':
+        // Something overhead, moving a great deal of air.
+        this.burst(t, 0.5, 0.9, 0.14 * v, 'bandpass', 220, 1.2, d, 520);
+        this.tone('sine', 60, t, 0.4, 0.9, 0.16 * v, d, 90);
+        break;
+      case 'slam':
+        this.tone('sine', 58, t, 0.003, 0.9, 0.5 * v, d, 22);
+        this.burst(t, 0.002, 0.5, 0.36 * v, 'lowpass', 1100, 0.6, d, 120);
+        this.burst(t + 0.02, 0.01, 1.2, 0.2 * v, 'lowpass', 400, 0.8, wet, 90);
+        this.burst(t, 0.001, 0.12, 0.2 * v, 'highpass', 2800, 0.8, d);
+        break;
+      case 'scrape':
+        this.burst(t, 0.2, 1.0, 0.16 * v, 'bandpass', 900, 3.5, d, 1700);
+        this.burst(t, 0.2, 1.0, 0.14 * v, 'lowpass', 300, 0.8, d);
+        break;
+      case 'swell':
+        this.burst(t, 1.6, 0.9, 0.2 * v, 'lowpass', 500, 0.7, d, 1500);
+        break;
+      case 'wave':
+        this.burst(t, 0.25, 2.6, 0.34 * v, 'lowpass', 2400, 0.6, d, 500);
+        this.burst(t, 0.2, 2.0, 0.12 * v, 'highpass', 3600, 0.7, d);
+        this.tone('sine', 52, t, 0.2, 1.6, 0.2 * v, d, 36);
+        break;
+      case 'barb':
+        // A live barb coming out: a crack of current, and a note that dies.
+        this.burst(t, 0.001, 0.09, 0.3 * v, 'highpass', 3600, 1.5, d);
+        this.tone('sawtooth', 1480, t, 0.002, 0.5, 0.07 * v, d, 180);
+        this.tone('sine', 880, t + 0.02, 0.005, 0.9, 0.08 * v, wet, 440);
+        break;
+      case 'pulse':
+        // Relay three, rung like a bell.
+        [50, 62, 69, 74].forEach((n, i) => {
+          this.tone('sine', midi(n), t + i * 0.015, 0.005, 2.2, 0.16 * v, d);
+          this.tone('triangle', midi(n + 12), t + i * 0.015, 0.005, 2.6, 0.07 * v, wet);
+        });
+        this.burst(t, 0.002, 0.3, 0.16 * v, 'bandpass', 2600, 3, wet, 900);
+        break;
+      case 'floods':
+        // Breakers going over, one bank of lamps after another.
+        [0, 0.09, 0.2].forEach((at, i) => {
+          this.burst(t + at, 0.001, 0.05, 0.18 * v, 'bandpass', 900 + i * 300, 2, d);
+          this.tone('sawtooth', 100, t + at, 0.01, 0.5, 0.04 * v, d);
+        });
+        break;
     }
   }
 

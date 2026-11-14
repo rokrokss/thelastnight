@@ -2,7 +2,8 @@ import { expect } from 'vitest';
 import { CHAPTERS } from '../../src/content';
 import type { Action } from '../../src/core/input';
 import type { World } from '../../src/game/world';
-import { reached, release, steer, type Pad } from './bot';
+import { FLOOD_X, G as QUAY_G, HANG, HOLD_X } from '../../src/content/ch3b.level';
+import { brawl, reached, release, steer, type Pad } from './bot';
 
 /**
  * Something that can play the game. The same script of actions runs against
@@ -78,6 +79,21 @@ export async function use(d: Driver, id: string): Promise<void> {
   d.pad.tap('interact');
   await d.tick();
   await d.tick();
+}
+
+/** Fight until something is true: shoot what can be shot, stand still through the scenes. */
+export async function fight(d: Driver, what: string, done: () => boolean, maxSec = 300): Promise<void> {
+  for (let i = 0; i < maxSec * 60; i++) {
+    if (done()) {
+      release(d.pad);
+      return;
+    }
+    if (d.fails.length) throw new Error(`went down (${d.fails.join(',')}) fighting: ${what}`);
+    if (d.ready && !d.busy) brawl(d.world, d.pad);
+    else release(d.pad);
+    await d.tick();
+  }
+  throw new Error(`timed out fighting: ${what} (${where(d)})`);
 }
 
 async function leaves(d: Driver, from: string, to: string, maxSec = 60): Promise<void> {
@@ -170,7 +186,30 @@ export async function playThrough(d: Driver, ending: number): Promise<void> {
     [2610, 240],
   ]);
   await use(d, 'relay3');
-  await leaves(d, 'the yards', 'spire');
+  await leaves(d, 'the yards', 'quay');
+
+  // ---- Three, part two: the Quay ----
+  d.picks = [];
+  await d.enter('quay');
+  await until(d, 'quay intro', idle(d), 90);
+  expect(d.world.combat?.armed).toBe(true);
+  await go(d, HOLD_X, QUAY_G);
+  await fight(d, 'holding the quay', () => d.exit !== null);
+  expect(d.flags['quay.wave']).toBe(3);
+  expect(d.exit).toBe('tide');
+
+  // ---- Three, part three: the Undertow ----
+  await d.enter('tide');
+  await until(d, 'tide intro', idle(d), 90);
+  await fight(d, 'the first barbs', () => d.world.thing('floods').enabled, 400);
+  expect(d.flags['tide.phase']).toBe(2);
+  await go(d, FLOOD_X + 14, QUAY_G, 40);
+  await use(d, 'floods');
+  await fight(d, 'the rest of the barbs', () => d.flags['tide.free'] === 1 && idle(d)(), 600);
+  expect(d.world.combat?.kaiju?.barbsLeft).toBe(0);
+  await go(d, HANG.x + HANG.w / 2, QUAY_G - HANG.h, 40);
+  await use(d, 'hook');
+  await leaves(d, 'the quay', 'spire');
 
   // ---- Four: the Spire ----
   d.picks = [ending - 1];

@@ -1,7 +1,7 @@
 import type { Action, Controls } from '../../src/core/input';
 import type { World } from '../../src/game/world';
 
-const ALL: Action[] = ['left', 'right', 'up', 'down', 'jump'];
+const ALL: Action[] = ['left', 'right', 'up', 'down', 'jump', 'fire'];
 
 /** The buttons the autopilot presses: anything that can hold or release an action. */
 export interface Pad {
@@ -57,6 +57,48 @@ export function steer(w: World, c: Pad, tx: number, ty: number): void {
 
 export function release(c: Pad): void {
   for (const a of ALL) c.set(a, false);
+}
+
+/**
+ * The autopilot in a fight: shoot whatever the gun can reach; if something
+ * could be shot from somewhere else, go and stand in front of it. It makes no
+ * attempt to stay alive, so it is for runs where nothing can hurt it.
+ */
+export function brawl(w: World, c: Pad): void {
+  const cb = w.combat;
+  const p = w.player;
+  if (!cb || !cb.armed || p.state === 'dead') {
+    release(c);
+    return;
+  }
+  if (p.state === 'normal' && cb.aimTarget(w)) {
+    release(c);
+    c.set('fire', true);
+    return;
+  }
+  // Nothing in the sights: the nearest thing that could be shot from where she is standing, if it were not hidden.
+  let tx: number | null = null;
+  const consider = (s: { open(fromX: number): boolean; hitbox(): { x: number; w: number } | null }): void => {
+    const hb = s.hitbox();
+    if (!hb || !s.open(p.cx)) return;
+    const x = hb.x + hb.w / 2;
+    if (tx === null || Math.abs(x - p.cx) < Math.abs(tx - p.cx)) tx = x;
+  };
+  for (const e of cb.enforcers) consider(e);
+  for (const m of cb.marks) consider(m);
+  if (cb.kaiju) for (const b of cb.kaiju.barbs) consider(b);
+  if (tx === null) {
+    release(c);
+    return;
+  }
+  const side = p.cx <= tx ? -1 : 1;
+  const stand = tx + side * 90;
+  if (Math.abs(stand - p.cx) > 8) steer(w, c, stand, w.level.groundY);
+  else {
+    // In place but looking the wrong way: a tap toward it turns her round.
+    release(c);
+    c.set(side < 0 ? 'right' : 'left', true);
+  }
 }
 
 /** Synchronous drive for pure traversal tests (no story scripts involved). */

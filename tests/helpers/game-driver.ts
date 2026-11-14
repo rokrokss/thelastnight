@@ -111,6 +111,7 @@ export class GameDriver implements Driver {
     // Stealth and weather have their own tests; here the subject is the game around them.
     w.stealthOff = true;
     w.wind = 0;
+    if (w.combat) w.combat.harmless = true;
     if (w.failed && w !== this.failedWorld) {
       this.failedWorld = w;
       this.fails.push(w.failed);

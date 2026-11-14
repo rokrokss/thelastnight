@@ -13,7 +13,18 @@ export interface Pose {
   roll: number;
   /** Focus pull: 0 on the subject, toward +1 the foreground, toward -1 the far distance. */
   rack: number;
+  /**
+   * Lens shift, in screen px: where the vanishing point sits relative to the
+   * frame centre. The play plane does not move; everything in front of and
+   * behind it does. Up (negative y) looks down onto floors and roofs; left or
+   * right looks along the street and opens up the sides of buildings.
+   */
+  shiftX: number;
+  shiftY: number;
 }
+
+/** Everyday lens shift: the horizon rides a little above the middle of the frame, so the ground has room. */
+export const SHIFT_Y = -42;
 
 export type Ease = 'inOut' | 'in' | 'out' | 'linear';
 
@@ -36,6 +47,9 @@ export interface ShotSpec {
   zoom?: number;
   roll?: number;
   rack?: number;
+  /** Lens shift (see Pose): where the vanishing point goes, in screen px from the frame centre. */
+  shiftX?: number;
+  shiftY?: number;
   /**
    * 0..1. Below 1 the shot only leans the gameplay camera toward this setup,
    * for a glance at something while the player keeps control.
@@ -59,6 +73,8 @@ const mixPose = (a: Pose, b: Pose, t: number): Pose => ({
   zoom: lerp(a.zoom, b.zoom, t),
   roll: lerp(a.roll, b.roll, t),
   rack: lerp(a.rack, b.rack, t),
+  shiftX: lerp(a.shiftX, b.shiftX, t),
+  shiftY: lerp(a.shiftY, b.shiftY, t),
 });
 
 /** Where a named body is, for framing purposes (about chest height). */
@@ -83,13 +99,15 @@ export class Camera {
   zoom = 1;
   roll = 0;
   rack = 0;
+  shiftX = 0;
+  shiftY = SHIFT_Y;
   shake = 0;
   /** Counts shots placed, so a delayed release can tell whether its shot is still the current one. */
   serial = 0;
   private look = 0;
   private anchor = 0;
   private idle = 0;
-  private game: Pose = { x: 0, y: 0, zoom: BASE_ZOOM, roll: 0, rack: 0 };
+  private game: Pose = { x: 0, y: 0, zoom: BASE_ZOOM, roll: 0, rack: 0, shiftX: 0, shiftY: SHIFT_Y };
   private shot: {
     from: Pose;
     spec: ShotSpec;
@@ -101,7 +119,15 @@ export class Camera {
   private back: { from: Pose; t: number; dur: number } | null = null;
 
   get pose(): Pose {
-    return { x: this.x + VIEW_W / 2, y: this.y + VIEW_H / 2, zoom: this.zoom, roll: this.roll, rack: this.rack };
+    return {
+      x: this.x + VIEW_W / 2,
+      y: this.y + VIEW_H / 2,
+      zoom: this.zoom,
+      roll: this.roll,
+      rack: this.rack,
+      shiftX: this.shiftX,
+      shiftY: this.shiftY,
+    };
   }
 
   /** A scripted shot (not the gameplay framing) currently owns the camera. */
@@ -181,7 +207,15 @@ export class Camera {
     }
     x += (spec.dx ?? 0) / zoom;
     y += (spec.dy ?? 0) / zoom;
-    return { x, y, zoom, roll: spec.roll ?? base.roll, rack: spec.rack ?? base.rack };
+    return {
+      x,
+      y,
+      zoom,
+      roll: spec.roll ?? base.roll,
+      rack: spec.rack ?? base.rack,
+      shiftX: spec.shiftX ?? base.shiftX,
+      shiftY: spec.shiftY ?? base.shiftY,
+    };
   }
 
   /** How the camera frames ordinary play: follows, leads, and reacts. */
@@ -233,7 +267,8 @@ export class Camera {
       Math.sin(w.time * 1.3) * 0.012 * tension +
       clamp(w.wind / 400, -1, 1) * 0.022 +
       (w.heat > 0.5 ? Math.sin(w.time * 0.8) * 0.016 : 0);
-    return { x, y, zoom, roll, rack: zone?.rack ?? 0 };
+    // The lens leans a little the way she is going, so the street ahead opens up.
+    return { x, y, zoom, roll, rack: zone?.rack ?? 0, shiftX: this.look * 0.6, shiftY: zone?.shiftY ?? SHIFT_Y };
   }
 
   /** A glance must never lose the player: hold them inside the frame, clear of its edges. */
@@ -257,6 +292,8 @@ export class Camera {
     this.zoom = pose.zoom;
     this.roll = pose.roll;
     this.rack = pose.rack;
+    this.shiftX = pose.shiftX;
+    this.shiftY = pose.shiftY;
   }
 
   /** Put the camera on the player with no travel (spawn, restart). */
@@ -279,6 +316,8 @@ export class Camera {
     g.zoom = damp(g.zoom, want.zoom, 1.4, dt);
     g.roll = damp(g.roll, want.roll, 2.5, dt);
     g.rack = damp(g.rack, want.rack, 1.5, dt);
+    g.shiftX = damp(g.shiftX, want.shiftX, 1.2, dt);
+    g.shiftY = damp(g.shiftY, want.shiftY, 1.2, dt);
 
     let pose: Pose = g;
     const s = this.shot;

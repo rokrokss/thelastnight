@@ -1,3 +1,4 @@
+import { combatFx } from '../src/art/combat';
 import type { SceneArt } from '../src/art/scene';
 import type { AmbienceMix } from '../src/audio/audio';
 import { ScriptedControls } from '../src/core/input';
@@ -32,6 +33,9 @@ export interface Track {
   /** Radians of slow sway added to the roll (a pursuit). */
   sway?: number;
   rack?: number;
+  /** Lens shift: how far the vanishing point sits from the frame centre (negative y looks down). */
+  shiftX?: number;
+  shiftY?: number;
 }
 
 /** Nobody reads captions on a film set. */
@@ -119,6 +123,8 @@ export class Scene {
       zoom: tr.zoom,
       roll: (tr.roll ?? 0) + (tr.sway ? Math.sin(this.w.time * 1.1) * tr.sway : 0),
       rack: tr.rack ?? 0,
+      shiftX: tr.shiftX ?? 0,
+      shiftY: tr.shiftY ?? -30,
     });
   }
 
@@ -165,6 +171,8 @@ export class Scene {
         case 'rung':
           this.foley.sfx(f.type);
           break;
+        default:
+          combatFx(f, this.foley, v, w);
       }
     }
     w.fx.length = 0;

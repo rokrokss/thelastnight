@@ -4,6 +4,7 @@ import { Rng } from '../core/math';
 import { Art, ctx2d, makeCanvas } from '../gfx/art';
 import type { Look } from '../gfx/renderer';
 import type { LayerGroup, Stage } from '../gfx/stage';
+import { WorldBuilder } from '../gfx/world';
 import type { LevelData, LightDef, OneWay, Solid } from '../game/level';
 import { RAMP } from './palette';
 import { maskOccluder, seedOf, wall, type Emitter, type FlickerRect, type PaintCtx } from './paint';
@@ -49,6 +50,14 @@ export interface SceneArt {
   /** Per-frame scenery in the play layer (drawn over the back strip, behind actors). */
   playDynamics: Dynamic[];
   indicators: Indicator[];
+  /** The scene's depth: floors, and the sides and tops of what the play layer shows only the face of. */
+  depth: WorldBuilder;
+  /**
+   * How far the distant layers rise to meet the horizon (see Stage.lift).
+   * Leave unset to work it out from the level's ground; a scene whose sky was
+   * composed for the frame rather than for a ground line (the Spire) sets 0.
+   */
+  lift?: number;
 }
 
 export interface SceneBuild {
@@ -99,6 +108,8 @@ export function beginScene(level: LevelData, look: Look): SceneBuild {
   const lights: LightDef[] = [...level.lights];
   const emitters: Emitter[] = [];
   const flickers: FlickerRect[] = [];
+  const depth = new WorldBuilder();
+  depth.floorY = level.groundY;
   const art: SceneArt = {
     layers: [],
     back,
@@ -112,8 +123,9 @@ export function beginScene(level: LevelData, look: Look): SceneBuild {
     dynamics: [],
     playDynamics: [],
     indicators: [],
+    depth,
   };
-  return { c: { back, mid, front, mask, lights, emitters, flickers, level, ox: PAD, oy: PAD }, art };
+  return { c: { back, mid, front, mask, lights, emitters, flickers, level, ox: PAD, oy: PAD, depth }, art };
 }
 
 /** Size a parallax layer so it covers every camera position in the level. */

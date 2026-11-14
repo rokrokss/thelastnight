@@ -97,6 +97,12 @@ function buildTops(): LevelData {
   b.drone({ id: 'sweeper', path: [[1700, 236], [3700, 236]], speed: 60, range: 250, half: 0.3, active: false, relentless: true });
 
   b.npc({ id: 'jin', x: 150, y: 430, look: 'jin', facing: 1 });
+  // The roofs are lived on: an old man in his chair, and children on the roofs behind.
+  b.npc({ id: 'r_elder', x: 1046, y: 418, look: 'elder_m', anim: 'sit', facing: -1, extra: true });
+  b.npc({ id: 'r_kid1', x: 430, y: 430, look: 'kid_f', patrol: [370, 600], speed: 34, extra: true, z: 120 });
+  b.npc({ id: 'r_kid2', x: 1440, y: 418, look: 'kid_m', patrol: [1370, 1560], speed: 38, extra: true, z: 150 });
+  b.npc({ id: 'r_teen', x: 2500, y: 406, look: 'teen_m', patrol: [2400, 2620], speed: 20, extra: true, z: 130 });
+  b.npc({ id: 'r_gran', x: 2820, y: 406, look: 'elder_f', patrol: [2720, 2930], speed: 12, extra: true, z: 90 });
 
   b.trigger('tr1', 236, 340, 64, 100);
   b.trigger('tr2', 570, 340, 70, 100);
@@ -196,10 +202,11 @@ export const tops: Chapter = {
     d.lock();
     await d.bars(true, 0);
     // Open high over the roofscape with the moon and skyline sharp, then come down to the two of them.
-    d.cut({ x: 430, y: 210, zoom: 1, rack: -1, roll: 0.012 });
+    d.cut({ x: 430, y: 250, zoom: 1, rack: -1, roll: 0.012, shiftX: -70, shiftY: -165 });
     await d.wait(0.5);
     void d.fade(0, 2.2);
-    d.drift({ x: 300, y: 330, zoom: 1.06, rack: -0.2, roll: 0 }, 6.2);
+    // From looking down into the streets between the roofs, level out onto this one.
+    d.drift({ x: 300, y: 330, zoom: 1.06, rack: -0.2, roll: 0, shiftX: 0, shiftY: -30 }, 6.2);
     await d.card('CHAPTER TWO', 'THE TOPS', 'The roofs belong to the children.');
     d.drift({ on: ['sol', 'jin'], fit: true, dy: -8, rack: 0 }, 2);
     await d.walk('sol', 132, 34);

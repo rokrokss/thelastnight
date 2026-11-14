@@ -221,10 +221,11 @@ export const spire: Chapter = {
     d.lock();
     await d.bars(true, 0);
     // Start well up the tower in the storm, tipped by the wind, and crane all the way down to her.
-    d.cut({ x: 330, y: 1780, zoom: 1, rack: -0.5, roll: 0.035 });
+    // From below, looking up: the lens is tipped above the horizon so the tower's frame runs away overhead.
+    d.cut({ x: 330, y: 1780, zoom: 1, rack: -0.5, roll: 0.035, shiftX: 0, shiftY: 90 });
     await d.wait(0.5);
     void d.fade(0, 2.2);
-    d.drift({ x: 300, y: 2150, zoom: 1, rack: 0, roll: 0 }, 7);
+    d.drift({ x: 300, y: 2150, zoom: 1, rack: 0, roll: 0, shiftY: -30 }, 7);
     await d.card('CHAPTER FOUR', 'THE SPIRE', 'They built it around her transmitter.');
     await d.move({ on: 'sol', zoom: 1.4, dx: 40, dy: -24, rack: 0, roll: 0 }, 2.4);
     await d.say('sol', 'Six hundred metres. In this.');

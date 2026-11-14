@@ -41,6 +41,8 @@ export interface LightDef {
   flicker?: Flicker;
   falloff?: number;
   on?: boolean;
+  /** Depth in front of (-) or behind (+) the play plane, for where its pool falls on the ground. */
+  z?: number;
 }
 
 export interface PropDef {
@@ -75,6 +77,8 @@ export interface NpcDef {
   extra?: boolean;
   /** Drawn behind mid-depth set dressing (a vendor behind their counter). */
   behind?: boolean;
+  /** Stands at this depth instead of on the play plane: positive is the far side of the street, negative is close to the lens. */
+  z?: number;
 }
 
 export interface DroneDef {
@@ -148,6 +152,8 @@ export interface CamZone extends Rect {
   offX?: number;
   /** Focus pull while inside: negative favours the distance (a vista), positive the foreground. */
   rack?: number;
+  /** Vertical lens shift while inside (see camera Pose): more negative looks further down onto the ground. */
+  shiftY?: number;
 }
 
 export interface Weather {

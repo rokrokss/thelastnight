@@ -35,15 +35,16 @@ export const lanes: Chapter = {
     d.lock();
     await d.bars(true, 0);
     // Open on the skyline between the roofs with the focus deep; the street is a smear of light.
-    d.cut({ x: 640, y: 135, zoom: 1, rack: -1 });
+    // High over the market, looking down on tarp roofs and the wet road, then down to street level.
+    d.cut({ x: 640, y: 160, zoom: 1, rack: -1, shiftX: 80, shiftY: -160 });
     await d.wait(0.6);
     void d.fade(0, 2.2);
     // Track along the stalls while the focus falls forward onto the market.
-    d.drift({ x: 470, y: 150, zoom: 1.12, rack: 0 }, 6);
+    d.drift({ x: 470, y: 165, zoom: 1.12, rack: 0, shiftX: 0, shiftY: -36 }, 6);
     await d.card('CHAPTER ONE', 'THE LANES', 'Low town. Eleven years quiet.');
     // Something crosses the lens; behind it we are at the tram stairs, focus on the foreground.
     await d.wipe();
-    d.cut({ x: 170, y: 185, zoom: 1.5, rack: 0.7 });
+    d.cut({ x: 170, y: 185, zoom: 1.5, rack: 0.7, shiftX: 0, shiftY: -30 });
     d.drift({ on: 'sol', zoom: 1.45, dy: -6, rack: 0 }, 2.4);
     await d.walk('sol', 118, 34);
     d.sfx('static');

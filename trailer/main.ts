@@ -1,8 +1,13 @@
+import { LOOKS, lookFor } from '../src/art/palette';
+import { drawPuppet, PUPPET_H, PUPPET_OX, PUPPET_OY, PUPPET_W, type Anim } from '../src/art/puppet';
+import { Art } from '../src/gfx/art';
 import { loadFonts } from '../src/gfx/fonts';
 import { Renderer } from '../src/gfx/renderer';
 import { FILM, type Take } from './film';
+import { LAB } from './lab';
 import { Overlay } from './overlay';
 import { Player, STEP } from './player';
+import { PREVIEWS } from './previews';
 import { bounce, wav, type Air, type Heard } from './sound';
 
 /**
@@ -13,6 +18,7 @@ import { bounce, wav, type Air, type Heard } from './sound';
  *   ?mode=render   every frame, then the soundtrack
  *   ?mode=audio    the soundtrack only (the takes are run, but nothing is drawn)
  *   ?mode=sheet    a contact sheet: a few frames from every take
+ *   ?mode=cast     a model sheet: every character in a few poses
  *   (no mode)      nothing; drive it by hand through window.__trailer
  */
 const q = new URLSearchParams(location.search);
@@ -21,6 +27,8 @@ const H = Number(q.get('h') ?? 1080);
 const FPS = Number(q.get('fps') ?? 60);
 const MODE = q.get('mode');
 const ONLY = q.get('only')?.split(',') ?? null;
+/** Contact-sheet cell width: 480 shows the cut at a glance, 960 shows the pixels. */
+const CELL = Number(q.get('cell') ?? 480);
 
 const hud = document.getElementById('hud')!;
 const say = (text: string): void => {
@@ -111,13 +119,14 @@ async function main(): Promise<void> {
 
   /** A few frames from every take, tiled, so the whole cut can be checked at a glance. */
   const sheet = async (): Promise<void> => {
-    const takes = FILM.takes.filter((t) => !ONLY || ONLY.includes(t.name));
-    const cols = 4;
-    const cw = 480;
-    const chh = 270;
+    // Named takes may also come from the previews (the fights, shot on their own) or the lab (throwaway set-ups).
+    const takes = ONLY ? [...FILM.takes, ...PREVIEWS, ...LAB].filter((t) => ONLY.includes(t.name)) : FILM.takes;
+    const cw = CELL;
+    const chh = Math.round((CELL * 9) / 16);
+    const cols = Math.max(1, Math.floor(1920 / cw));
     const cells: [Take, number][] = [];
     for (const t of takes) for (const u of t.dur > 2.6 ? [0.02, 0.35, 0.68, 0.98] : [0.04, 0.5, 0.96]) cells.push([t, u * t.dur]);
-    const perPage = cols * 6;
+    const perPage = cols * Math.max(2, Math.floor(1620 / chh));
     for (let page = 0; page * perPage < cells.length; page++) {
       const part = cells.slice(page * perPage, (page + 1) * perPage);
       const c = document.createElement('canvas');
@@ -155,10 +164,55 @@ async function main(): Promise<void> {
     say('done');
   };
 
+  /** Every character in a few poses, enlarged, on a dark and a light ground: for judging silhouettes. */
+  const cast = async (): Promise<void> => {
+    const ids = [...Object.keys(LOOKS), ...Array.from({ length: 24 }, (_, i) => `c${i + 1}`)];
+    const poses: [Anim, number][] = [
+      ['idle', 0],
+      ['walk', 0.12],
+      ['walk', 0.62],
+      ['run', 0.3],
+      ['sit', 0],
+      ['talk', 0.3],
+      ['crouch', 0],
+    ];
+    const S = 4;
+    const ROWS = Math.min(PUPPET_H, PUPPET_OY + 6 - 14);
+    const cw = PUPPET_W * S;
+    const chh = ROWS * S;
+    const perPage = 12;
+    const puppet = new Art(PUPPET_W, PUPPET_H);
+    for (let page = 0; page * perPage < ids.length; page++) {
+      const part = ids.slice(page * perPage, (page + 1) * perPage);
+      const c = document.createElement('canvas');
+      c.width = 90 + poses.length * cw;
+      c.height = part.length * chh;
+      const ck = c.getContext('2d')!;
+      ck.imageSmoothingEnabled = false;
+      part.forEach((id, row) => {
+        ck.fillStyle = row % 2 ? '#20283a' : '#8a93a6';
+        ck.fillRect(0, row * chh, c.width, chh);
+        ck.fillStyle = row % 2 ? '#e9eef4' : '#10141c';
+        ck.font = '14px ui-monospace, monospace';
+        ck.fillText(id, 6, row * chh + chh / 2);
+        poses.forEach(([anim, phase], col) => {
+          puppet.clearAll();
+          drawPuppet(puppet, PUPPET_OX, PUPPET_OY, lookFor(id), { anim, phase, t: 1.3, antX: 0 });
+          // Only the part of the sprite a standing figure uses: the headroom above is for ledge climbs.
+          ck.drawImage(puppet.color, 0, PUPPET_H - ROWS, PUPPET_W, ROWS, 90 + col * cw, row * chh, cw, chh);
+        });
+      });
+      await post(`file?name=cast-${page + 1}.png`, await blob(c));
+    }
+    await post('done');
+    say('done');
+  };
+
   Object.assign(window, { __trailer: { film: FILM, player, renderer, still, render, sheet, heard, air } });
   if (MODE === 'render') await render(true);
   else if (MODE === 'audio') await render(false);
   else if (MODE === 'sheet') await sheet();
+  else if (MODE === 'cast') await cast();
   else say(`ready: ${FILM.takes.length} takes, ${FILM.duration}s`);
 }
 

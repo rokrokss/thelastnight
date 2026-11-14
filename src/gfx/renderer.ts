@@ -1,6 +1,7 @@
 import { freeTarget, makeCanvasTexture, makeProg, makeTarget, type Prog, type Target } from './gl';
 import { PAD, TEX_H, TEX_W, VIEW_H, VIEW_W } from '../core/constants';
 import * as S from './shaders';
+import { FOCAL, SpriteBatch, WORLD_STRIDE, type WorldGeo } from './world';
 
 export { PAD, TEX_H, TEX_W, VIEW_H, VIEW_W } from '../core/constants';
 
@@ -20,6 +21,22 @@ export interface Light {
   outer?: number;
   shadow?: boolean;
   falloff?: number;
+  /** Depth behind (+) or in front of (-) the play plane, for lighting the world's floors and walls. */
+  z?: number;
+}
+
+/** What the world pass needs for one frame. */
+export interface WorldFrame {
+  geo: WorldGeo;
+  /** World position of the lens: the point of the play plane that sits on the vanishing point. */
+  eyeX: number;
+  eyeY: number;
+  /** Things standing on a floor, as soft shadows: x, floor height, depth, radius. */
+  blobs: [number, number, number, number][];
+  /** This frame's sprites that stand at a depth of their own. */
+  sprites: SpriteBatch;
+  /** 1 / distance of the focal plane, in focal lengths (the play plane is at `zoom`). */
+  focusInv: number;
 }
 
 /** Per-scene art direction for the presentation pipeline. */
@@ -65,6 +82,14 @@ export interface FrameParams {
   fgFade: number;
   /** Camera roll in radians. */
   roll: number;
+  /** Lens shift: where the vanishing point sits relative to the frame centre, in scene px. */
+  vanX: number;
+  vanY: number;
+  /** World position of the view's top-left corner on the play plane. */
+  camX: number;
+  camY: number;
+  /** The scene's depth geometry, if it has any. */
+  world: WorldFrame | null;
   /** Wipe transition progress, 0 (off) to 1. */
   wipe: number;
   /** Fractional part of the camera position; the play canvas is drawn at the integer part. */
@@ -118,6 +143,19 @@ export class Renderer {
   private pDown!: Prog;
   private pUp!: Prog;
   private pFinal!: Prog;
+  private pWorld!: Prog;
+  private pNear!: Prog;
+  private worldVao: WebGLVertexArrayObject | null = null;
+  private worldVbo: WebGLBuffer | null = null;
+  private worldTex: [WebGLTexture, WebGLTexture] | null = null;
+  private worldGeo: WorldGeo | null = null;
+  private worldRT: Target | null = null;
+  private nearRT: Target | null = null;
+  private nearVao: WebGLVertexArrayObject | null = null;
+  private nearVbo: WebGLBuffer | null = null;
+  private spriteVao: WebGLVertexArrayObject | null = null;
+  private spriteVbo: WebGLBuffer | null = null;
+  private spriteTex: [WebGLTexture, WebGLTexture] | null = null;
   private tex = {} as Record<TexName, WebGLTexture>;
   private ow = 0;
   private oh = 0;
@@ -166,6 +204,10 @@ export class Renderer {
     this.pDown = makeProg(gl, S.VS_FULL, S.FS_DOWN, 'down');
     this.pUp = makeProg(gl, S.VS_FULL, S.FS_UP, 'up');
     this.pFinal = makeProg(gl, S.VS_FULL, S.FS_FINAL, 'final');
+    this.pWorld = makeProg(gl, S.VS_WORLD, S.FS_WORLD, 'world');
+    this.pNear = makeProg(gl, S.VS_FULL, S.FS_NEAR, 'near');
+    this.worldGeo = null;
+    this.spriteVao = null;
     const vao = gl.createVertexArray();
     if (!vao) throw new Error('createVertexArray failed');
     this.vao = vao;
@@ -201,6 +243,10 @@ export class Renderer {
     this.canvas.height = h;
     freeTarget(gl, this.lightRT);
     freeTarget(gl, this.sceneRT);
+    freeTarget(gl, this.worldRT);
+    freeTarget(gl, this.nearRT);
+    this.worldRT = makeTarget(gl, w, h, 3, this.hdr, true);
+    this.nearRT = makeTarget(gl, w, h, 3, this.hdr, true);
     if (this.groups) {
       for (const g of Object.values(this.groups)) {
         freeTarget(gl, g.a);
@@ -247,6 +293,151 @@ export class Renderer {
 
   private full(): void {
     this.gl.drawArrays(this.gl.TRIANGLES, 0, 3);
+  }
+
+  /** A vertex array laid out for world geometry, and the buffer behind it. */
+  private worldBuffer(data: Float32Array | null): [WebGLVertexArrayObject, WebGLBuffer] {
+    const gl = this.gl;
+    const vao = gl.createVertexArray();
+    const vbo = gl.createBuffer();
+    if (!vao || !vbo) throw new Error('world buffers failed');
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    if (data) gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+    const stride = WORLD_STRIDE * 4;
+    let at = 0;
+    [3, 2, 4, 4, 3].forEach((n, i) => {
+      gl.enableVertexAttribArray(i);
+      gl.vertexAttribPointer(i, n, gl.FLOAT, false, stride, at);
+      at += n * 4;
+    });
+    gl.bindVertexArray(this.vao);
+    return [vao, vbo];
+  }
+
+  private canvasPair(color: HTMLCanvasElement, glow: HTMLCanvasElement): [WebGLTexture, WebGLTexture] {
+    const gl = this.gl;
+    return [color, glow].map((canvas) => {
+      const t = gl.createTexture();
+      if (!t) throw new Error('createTexture failed');
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, canvas);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      return t;
+    }) as [WebGLTexture, WebGLTexture];
+  }
+
+  /** Put a scene's depth geometry and its texture atlas on the GPU (once per scene). */
+  private loadWorld(geo: WorldGeo): void {
+    const gl = this.gl;
+    for (const v of [this.worldVao, this.nearVao]) if (v) gl.deleteVertexArray(v);
+    for (const b of [this.worldVbo, this.nearVbo]) if (b) gl.deleteBuffer(b);
+    if (this.worldTex) for (const t of this.worldTex) gl.deleteTexture(t);
+    [this.worldVao, this.worldVbo] = this.worldBuffer(geo.verts);
+    [this.nearVao, this.nearVbo] = this.worldBuffer(geo.near);
+    this.worldTex = this.canvasPair(geo.atlas.color, geo.atlas.glow);
+    this.worldGeo = geo;
+  }
+
+  /** This frame's depth sprites: refresh their sheet and their vertices. */
+  private loadSprites(batch: SpriteBatch): number[] {
+    const gl = this.gl;
+    if (!this.spriteVao || !this.spriteVbo || !this.spriteTex) {
+      [this.spriteVao, this.spriteVbo] = this.worldBuffer(null);
+      this.spriteTex = this.canvasPair(batch.sheet.color, batch.sheet.glow);
+    }
+    const nb = batch.back.length / WORLD_STRIDE;
+    const nn = batch.near.length / WORLD_STRIDE;
+    if (nb + nn > 0) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.spriteTex[0]);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, batch.sheet.color);
+      gl.bindTexture(gl.TEXTURE_2D, this.spriteTex[1]);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, batch.sheet.glow);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.spriteVbo);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([...batch.back, ...batch.near]), gl.DYNAMIC_DRAW);
+    }
+    return [nb, nn];
+  }
+
+  /** Draw the depth geometry, lit and fogged: what is behind the play plane, then what is in front of it. */
+  private drawWorld(fp: FrameParams, wf: WorldFrame): void {
+    const gl = this.gl;
+    if (this.worldGeo !== wf.geo) this.loadWorld(wf.geo);
+    if (!this.worldRT || !this.nearRT || !this.worldVao || !this.nearVao || !this.worldTex) return;
+    const [spriteBack, spriteNear] = this.loadSprites(wf.sprites);
+    const look = fp.look;
+    const u = this.pWorld.u;
+    gl.useProgram(this.pWorld.p);
+    gl.uniform2f(u.uEye ?? null, wf.eyeX, wf.eyeY);
+    gl.uniform2f(u.uVan ?? null, fp.vanX, fp.vanY);
+    gl.uniform1f(u.uDz ?? null, FOCAL / fp.zoom);
+    gl.uniform1f(u.uFocal ?? null, FOCAL);
+    gl.uniform2f(u.uRot ?? null, Math.cos(fp.roll), Math.sin(fp.roll));
+    gl.uniform2f(u.uView ?? null, VIEW_W, VIEW_H);
+    // Unlike the play layer, the world's surfaces get no light buffer: lift their ambient to match.
+    gl.uniform3f(u.uAmb ?? null, look.ambPlay[0] * 1.7 + 0.03, look.ambPlay[1] * 1.7 + 0.03, look.ambPlay[2] * 1.7 + 0.04);
+    gl.uniform3fv(u.uFogColor ?? null, look.fogColor);
+    gl.uniform1f(u.uFogK ?? null, look.fogMid * 0.0034);
+    // Anything further than the mid layers' own depth is composited behind them.
+    gl.uniform1f(u.uMidW ?? null, 1 / fp.zoom + 1.0);
+    gl.uniform1f(u.uFocusInv ?? null, wf.focusInv);
+    const n = Math.min(S.WORLD_LIGHTS, fp.lights.length);
+    const pos = new Float32Array(S.WORLD_LIGHTS * 4);
+    const col = new Float32Array(S.WORLD_LIGHTS * 4);
+    const cone = new Float32Array(S.WORLD_LIGHTS * 4);
+    // Brightest and widest first, in case there are more lamps than slots.
+    const order = fp.lights
+      .map((L) => ({ L, k: L.r * (L.color[0] + L.color[1] + L.color[2]) }))
+      .sort((a, b) => b.k - a.k);
+    for (let i = 0; i < n; i++) {
+      const L = order[i]!.L;
+      pos.set([L.x + fp.camX, L.y + fp.camY, L.z ?? 0, L.r], i * 4);
+      col.set([L.color[0], L.color[1], L.color[2], L.falloff ?? 2], i * 4);
+      if (L.inner !== undefined && L.outer !== undefined) cone.set([L.dx ?? 0, L.dy ?? 1, Math.cos(L.inner), Math.cos(L.outer)], i * 4);
+      else cone.set([0, 1, 1, -1], i * 4);
+    }
+    gl.uniform1i(u.uNL ?? null, n);
+    gl.uniform4fv(u.uLpos ?? null, pos);
+    gl.uniform4fv(u.uLcol ?? null, col);
+    gl.uniform4fv(u.uLcone ?? null, cone);
+    const nb = Math.min(S.WORLD_BLOBS, wf.blobs.length);
+    const blob = new Float32Array(S.WORLD_BLOBS * 4);
+    for (let i = 0; i < nb; i++) blob.set(wf.blobs[i]!, i * 4);
+    gl.uniform1i(u.uNB ?? null, nb);
+    gl.uniform4fv(u.uBlob ?? null, blob);
+
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    const pass = (rt: Target, vao: WebGLVertexArrayObject, count: number, first: number, sprites: number): void => {
+      this.bind(rt);
+      gl.clearColor(0, 0, 0, 0);
+      gl.clearDepth(1);
+      gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+      if (count > 0) {
+        this.sampler(0, this.worldTex![0], u.uAtlasC);
+        this.sampler(1, this.worldTex![1], u.uAtlasG);
+        gl.uniform2f(u.uAtlasSize ?? null, wf.geo.atlas.w, wf.geo.atlas.h);
+        gl.bindVertexArray(vao);
+        gl.drawArrays(gl.TRIANGLES, 0, count);
+      }
+      if (sprites > 0 && this.spriteVao && this.spriteTex) {
+        this.sampler(0, this.spriteTex[0], u.uAtlasC);
+        this.sampler(1, this.spriteTex[1], u.uAtlasG);
+        gl.uniform2f(u.uAtlasSize ?? null, wf.sprites.sheet.w, wf.sprites.sheet.h);
+        gl.bindVertexArray(this.spriteVao);
+        gl.drawArrays(gl.TRIANGLES, first, sprites);
+      }
+    };
+    pass(this.worldRT, this.worldVao, wf.geo.count, 0, spriteBack);
+    pass(this.nearRT, this.nearVao, wf.geo.nearCount, spriteBack, spriteNear);
+    gl.bindVertexArray(this.vao);
+    gl.disable(gl.DEPTH_TEST);
   }
 
   render(src: Surfaces, fp: FrameParams): void {
@@ -335,8 +526,14 @@ export class Renderer {
         gl.uniform1f(u.uZoom ?? null, zoom);
         gl.uniform2f(u.uRot ?? null, rc, rs);
         // Only the play layer is drawn at whole pixels and needs the sub-pixel remainder.
-        if (name === 'play') gl.uniform2f(u.uOff ?? null, fp.fracX, fp.fracY);
-        else gl.uniform2f(u.uOff ?? null, 0, 0);
+        // It is also the one plane the lens shift leaves alone: the others grow about the vanishing point.
+        if (name === 'play') {
+          gl.uniform2f(u.uOff ?? null, fp.fracX, fp.fracY);
+          gl.uniform2f(u.uVan ?? null, 0, 0);
+        } else {
+          gl.uniform2f(u.uOff ?? null, 0, 0);
+          gl.uniform2f(u.uVan ?? null, fp.vanX, fp.vanY);
+        }
         gl.uniform1f(u.uPxScale ?? null, (g.a.w / VIEW_W) * zoom);
         this.full();
       }
@@ -361,6 +558,27 @@ export class Renderer {
       resolved[name] = cur;
     }
 
+    // ---- the world's depth geometry ----
+    const worldBlur = look.blurFar * 1.6 * (this.ow / VIEW_W);
+    if (fp.world) {
+      this.drawWorld(fp, fp.world);
+      if (this.nearRT) {
+        // What stands in front of the play plane joins the foreground layers, softened by its own distance.
+        const u = this.pNear.u;
+        gl.useProgram(this.pNear.p);
+        this.bind(resolved.fg);
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+        this.sampler(0, this.nearRT.tex[0]!, u.uC);
+        this.sampler(1, this.nearRT.tex[1]!, u.uG);
+        this.sampler(2, this.nearRT.tex[2]!, u.uA);
+        gl.uniform1f(u.uWorldBlur ?? null, worldBlur);
+        gl.uniform2f(u.uTexel ?? null, 1 / this.ow, 1 / this.oh);
+        this.full();
+        gl.disable(gl.BLEND);
+      }
+    }
+
     // ---- main composite ----
     this.bind(this.sceneRT);
     {
@@ -380,6 +598,23 @@ export class Renderer {
       this.sampler(10, playR.tex[0]!, u.uPlayRC);
       this.sampler(11, playR.tex[1]!, u.uPlayRG);
       gl.uniform1f(u.uPlayPre ?? null, playPre ? 1 : 0);
+      if (fp.world && this.worldRT) {
+        this.sampler(12, this.worldRT.tex[0]!, u.uWorldC);
+        this.sampler(13, this.worldRT.tex[1]!, u.uWorldG);
+        this.sampler(14, this.worldRT.tex[2]!, u.uWorldA);
+        // Out-of-focus radius in output px at full blur, matched to the far layers' own softness.
+        gl.uniform1f(u.uWorldBlur ?? null, worldBlur);
+        gl.uniform2f(u.uTexel ?? null, 1 / this.ow, 1 / this.oh);
+        gl.uniform1f(u.uWorldOn ?? null, 1);
+        gl.uniform1f(u.uFloorRow ?? null, fp.world.geo.floorY - fp.camY);
+        gl.uniform1f(u.uHorizonRow ?? null, fp.world.eyeY - fp.camY);
+      } else {
+        // Samplers must still point somewhere valid.
+        this.sampler(12, resolved.far.tex[0]!, u.uWorldC);
+        this.sampler(13, resolved.far.tex[1]!, u.uWorldG);
+        this.sampler(14, resolved.far.tex[1]!, u.uWorldA);
+        gl.uniform1f(u.uWorldOn ?? null, 0);
+      }
       gl.uniform1f(u.uFgFade ?? null, fp.fgFade);
       gl.uniform2f(u.uRot ?? null, rc, rs);
       gl.uniform2f(u.uView ?? null, VIEW_W, VIEW_H);

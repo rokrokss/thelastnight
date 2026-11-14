@@ -81,13 +81,14 @@ export const mast: Chapter = {
     d.lock();
     await d.bars(true, 0);
     // Open on the sea of fog with the focus far out, drifting across it.
-    d.cut({ x: 590, y: 250, zoom: 1, rack: -0.9, roll: -0.012 });
+    // Looking down across the fog from above the platform: the lens is tipped well below the horizon.
+    d.cut({ x: 590, y: 250, zoom: 1, rack: -0.9, roll: -0.012, shiftX: 50, shiftY: -120 });
     await d.wait(0.5);
     void d.fade(0, 2.6);
-    d.drift({ x: 480, y: 232, zoom: 1.05, rack: -0.9, roll: 0.008 }, 6.5, 'linear');
+    d.drift({ x: 480, y: 232, zoom: 1.05, rack: -0.9, roll: 0.008, shiftX: 20, shiftY: -80 }, 6.5, 'linear');
     await d.card('PROLOGUE', 'NIGHT SHIFT', 'Mast 14. Two hundred metres above the fog.');
     // Crane down the mast as the focus comes back onto the steel...
-    await d.move({ x: 450, y: 330, zoom: 1.12, rack: 0, roll: 0 }, 2.6);
+    await d.move({ x: 450, y: 330, zoom: 1.12, rack: 0, roll: 0, shiftX: 0, shiftY: -30 }, 2.6);
     await d.move({ x: 300, y: 500, zoom: 1.3 }, 2.6);
     // ...and find her on the deck.
     await d.move({ on: 'sol', zoom: 1.7, dy: -8 }, 1.8);

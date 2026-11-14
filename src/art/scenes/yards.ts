@@ -1,9 +1,11 @@
 import { PAD } from '../../core/constants';
 import { shade } from '../../core/color';
-import { clamp01, fbm, Rng, valueNoise } from '../../core/math';
+import { Rng } from '../../core/math';
 import { Art } from '../../gfx/art';
 import type { LevelData, PropDef, Solid } from '../../game/level';
 import { cityBackdrop, paintForeground } from '../backdrop';
+import { concreteTile, corrugatedTile, ground, waterTile } from '../depth';
+import type { TexRegion } from '../../gfx/world';
 import { GLOW, RAMP } from '../palette';
 import { cable, maskFloor, maskOccluder, seedOf, type PaintCtx } from '../paint';
 import { paintProp } from '../props';
@@ -49,7 +51,7 @@ export function paintBox(a: Art, x: number, y: number, seed: number): void {
   }
 }
 
-function boxStack(c: PaintCtx, s: Solid): void {
+export function boxStack(c: PaintCtx, s: Solid): void {
   const cols = Math.max(1, Math.round(s.w / BOX_W));
   const rows = Math.max(1, Math.round(s.h / BOX_H));
   for (let j = 0; j < rows; j++) {
@@ -60,37 +62,70 @@ function boxStack(c: PaintCtx, s: Solid): void {
   maskFloor(c, s.x, s.y, s.w, 2, () => 0.2);
 }
 
-/** Concrete apron with rails, lane paint and standing water. */
-function dock(c: PaintCtx, x0: number, x1: number, gy: number, bottom: number, seed: number): void {
+/** Corrugated steel in each container colour, for the sides and tops the front view never showed. */
+export function boxSkins(c: PaintCtx): Map<string, TexRegion> {
+  const skins = new Map<string, TexRegion>();
+  for (const col of BOX_COLORS) skins.set(col, corrugatedTile(c.depth, col));
+  return skins;
+}
+
+/** The colour `paintBox` gives the container at this position (same seed, same first draw). */
+const boxColor = (x: number, y: number): string => new Rng(seedOf(x, y, 9)).pick(BOX_COLORS);
+
+/** A stack's missing sides and tops, container by container, so each keeps its own colour. */
+export function stackDepth(c: PaintCtx, skins: Map<string, TexRegion>, s: Solid, z0 = 0): void {
+  const cols = Math.max(1, Math.round(s.w / BOX_W));
+  const rows = Math.max(1, Math.round(s.h / BOX_H));
+  // A box is as wide as it is tall; a stack is one box deep.
+  const z1 = z0 + BOX_H + 4;
+  for (let j = 0; j < rows; j++) {
+    for (const i of [0, cols - 1]) {
+      const x = s.x + i * BOX_W;
+      const skin = skins.get(boxColor(x, s.y + j * BOX_H))!;
+      const edge = i === 0 ? x : x + BOX_W;
+      if (i === 0 || cols === 1) c.depth.side(x, s.y + j * BOX_H, s.y + (j + 1) * BOX_H, z0, z1, skin, { tile: true });
+      if (i === cols - 1) c.depth.side(edge === x ? x + BOX_W : edge, s.y + j * BOX_H, s.y + (j + 1) * BOX_H, z0, z1, skin, { tile: true });
+    }
+  }
+  for (let i = 0; i < cols; i++) {
+    const x = s.x + i * BOX_W;
+    c.depth.floor(x, x + BOX_W, s.y, z0, z1, skins.get(boxColor(x, s.y))!, { tile: true, shade: 0.85, wet: 0.25 });
+  }
+}
+
+/**
+ * More stacks standing back from the play plane, row behind row: each is
+ * painted as a real face in the atlas and given sides and a top.
+ */
+function stackRows(c: PaintCtx, skins: Map<string, TexRegion>, z: number, seed: number, maxRows: number): void {
+  const d = c.depth;
+  const G = c.level.groundY;
+  const rng = new Rng(seed);
+  let x = -500 + rng.int(0, 90);
+  while (x < c.level.width + 500) {
+    const cols = rng.int(1, 3);
+    const rows = rng.int(1, maxRows);
+    const w = cols * BOX_W;
+    const h = rows * BOX_H;
+    const r = d.region(w, h);
+    for (let j = 0; j < rows; j++) for (let i = 0; i < cols; i++) paintBox(d.atlas, i * BOX_W, j * BOX_H, seedOf(x + i * BOX_W, G - h + j * BOX_H, 9));
+    d.seal(r);
+    d.face(x, x + w, G - h, G, z, r, { shade: 0.9 });
+    stackDepth(c, skins, { x, y: G - h, w, h }, z);
+    x += w + rng.int(18, 150);
+  }
+}
+
+/** The quay's edge under the walking line. The apron itself is a plane in the scene's depth. */
+export function dock(c: PaintCtx, x0: number, x1: number, gy: number): void {
   const a = c.back;
   const pv = RAMP.paving;
-  const w = x1 - x0;
-  const h = bottom - gy;
-  const rng = new Rng(seed);
-  a.dither(x0, gy, w, h, pv[1], RAMP.asphalt[0], (_u, v) => clamp01(v * 1.1));
-  a.rect(x0, gy, w, 1, pv[3]);
-  a.rect(x0, gy + 1, w, 1, pv[2]);
-  for (let x = x0 + rng.int(0, 40); x < x1; x += 56) a.rect(x, gy + 1, 1, h, RAMP.asphalt[0]);
-  a.speckle(x0, gy + 2, w, h - 2, pv[2], Math.floor((w * h) / 80), () => rng.next());
-  // Crane rails.
-  for (const ry of [9, 13]) {
-    a.rect(x0, gy + ry, w, 1, '#8a929c');
-    a.rect(x0, gy + ry + 1, w, 1, '#1a1c20');
-  }
-  for (let x = x0; x < x1; x += 9) a.rect(x, gy + 10, 2, 3, '#22252b');
-  // Hazard paint.
-  for (let x = x0 + rng.int(0, 60); x < x1; x += 140) {
-    a.dither(x, gy + 22, 64, 3, pv[1], '#b89a2a', (u) => 0.8 - valueNoise(x * 0.2 + u * 12, 1, seed) * 0.6);
-  }
-  maskFloor(c, x0, gy, w, h, (px, row) => {
-    if (row < 2) return 0.1;
-    const puddle = fbm(px * 0.022, row * 0.1 + 7.3, 3, seed);
-    return puddle > 0.52 ? 1 : 0.3 + 0.25 * valueNoise(px * 0.08, row * 0.3, seed + 3);
-  });
+  a.rect(x0, gy, x1 - x0, 1, pv[3]);
+  a.rect(x0, gy + 1, x1 - x0, 1, pv[2]);
 }
 
 /** Floodlight tower: the hard white light of a working port. */
-function floodTower(c: PaintCtx, x: number, gy: number, h: number, dir: 1 | -1): void {
+export function floodTower(c: PaintCtx, x: number, gy: number, h: number, dir: 1 | -1): void {
   const a = c.back;
   const m = RAMP.metal;
   a.rect(x - 2, gy - 8, 7, 8, m[1]);
@@ -117,7 +152,7 @@ function floodTower(c: PaintCtx, x: number, gy: number, h: number, dir: 1 | -1):
 }
 
 /** Ship-to-shore gantry crane. Collision supplies the ladders and decks; this is its steel. */
-function gantry(c: PaintCtx, x: number, gy: number): void {
+export function gantry(c: PaintCtx, x: number, gy: number): void {
   const a = c.back;
   const col = '#b8862a';
   const dark = shade(col, 0.55);
@@ -199,7 +234,7 @@ function gantry(c: PaintCtx, x: number, gy: number): void {
   }
 }
 
-function yardProp(c: PaintCtx, art: SceneArt, p: PropDef): boolean {
+export function yardProp(c: PaintCtx, art: SceneArt, p: PropDef): boolean {
   const a = p.front ? c.front : c.back;
   const x = p.x;
   const y = p.y;
@@ -305,11 +340,23 @@ export function paintYards(level: LevelData): SceneArt {
     highTint: [0.012, 0.012, 0.02],
   });
   const a = c.back;
-  dock(c, -PAD, level.width + PAD, level.groundY, level.height + PAD, level.seed);
+  dock(c, -PAD, level.width + PAD, level.groundY);
+  // The apron runs out to the lens and back to the quay's edge; beyond that, the harbour.
+  ground(c, concreteTile(c.depth, level.seed + 11), {
+    wet: 0.7,
+    lanes: [{ z: -96, color: '#b89a2a' }],
+    rails: [-22, -34, 150, 162],
+    shore: { z: 300, drop: 10, water: waterTile(c.depth, level.seed + 12), wall: concreteTile(c.depth, level.seed + 13) },
+  });
+  const skins = boxSkins(c);
+  stackRows(c, skins, 92, level.seed + 14, 3);
+  stackRows(c, skins, 196, level.seed + 15, 4);
   for (const p of level.props) if (!yardProp(c, art, p)) paintProp(c, art, p);
   for (const s of level.solids) {
-    if (s.tag === 'container') boxStack(c, s);
-    else paintSolid(c, s);
+    if (s.tag === 'container') {
+      boxStack(c, s);
+      stackDepth(c, skins, s);
+    } else paintSolid(c, s);
   }
   for (const o of level.oneWays) {
     paintOneWay(c, o);
@@ -328,7 +375,7 @@ export function paintYards(level: LevelData): SceneArt {
     cloudColor: '#2c3044',
     haze: '#232838',
     bodies: ['#0f1728', '#0c1320', '#0c121c', '#080c13'],
-    horizon: 226,
+    horizon: level.groundY - (level.height - 270) + 12,
     spire: 0.78,
     rail: false,
     lit: 0.7,

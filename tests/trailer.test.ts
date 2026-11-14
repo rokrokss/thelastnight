@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CHAPTERS } from '../src/content';
 import { SPEAKERS } from '../src/game/director';
 import { BAR, BPM, FILM } from '../trailer/film';
+import { PREVIEWS } from '../trailer/previews';
 
 /** The cut is data: these checks catch a slipped edit before a long render does. */
 describe('trailer cut', () => {
@@ -33,6 +34,18 @@ describe('trailer cut', () => {
       expect(names.has(t.name), `two takes called ${t.name}`).toBe(false);
       names.add(t.name);
       if (t.chapter) expect(CHAPTERS[t.chapter], `${t.name}: no chapter "${t.chapter}"`).toBeTruthy();
+    }
+  });
+
+  it('has preview takes that shoot in real chapters, clear of the film and of each other', () => {
+    const names = new Set(takes.map((t) => t.name));
+    for (const t of PREVIEWS) {
+      expect(names.has(t.name), `two takes called ${t.name}`).toBe(false);
+      names.add(t.name);
+      expect(t.dur, t.name).toBeGreaterThan(0);
+      expect(CHAPTERS[t.chapter ?? ''], `${t.name}: no chapter "${t.chapter}"`).toBeTruthy();
+      // Parked after the end of the film, so its titles never land on them.
+      expect(t.at, t.name).toBeGreaterThanOrEqual(FILM.duration);
     }
   });
 

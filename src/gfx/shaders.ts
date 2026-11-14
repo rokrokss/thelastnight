@@ -138,13 +138,16 @@ uniform float uPad;
 uniform float uZoom;
 uniform vec2 uRot;
 uniform vec2 uOff;
+uniform vec2 uVan;
 in vec2 vUv;
 layout(location = 0) out vec4 oC;
 layout(location = 1) out vec4 oG;
 void main(){
   vec2 vp = vec2(vUv.x, 1.0 - vUv.y) * uView;
-  vec2 c = (vp - uView * 0.5) / uZoom;
-  vec2 p = vec2(c.x * uRot.x - c.y * uRot.y, c.x * uRot.y + c.y * uRot.x) + uView * 0.5 + uOff + uPad;
+  vec2 c = vp - uView * 0.5;
+  // Undo the roll about the frame centre, then the group's magnification about the vanishing point.
+  vec2 q = vec2(c.x * uRot.x - c.y * uRot.y, c.x * uRot.y + c.y * uRot.x);
+  vec2 p = (q - uVan) / uZoom + uVan + uView * 0.5 + uOff + uPad;
   vec2 uv = vec2(p.x / uTexSize.x, 1.0 - p.y / uTexSize.y);
   oC = sharpTex(uC, uv);
   oG = sharpTex(uG, uv);
@@ -198,9 +201,62 @@ void main(){
  * reflection → light in-scatter (visible beams) → ground fog → foreground.
  * Writes colour and a separate glow buffer that feeds bloom.
  */
+const WORLDTAP = `
+uniform float uWorldBlur;
+uniform vec2 uTexel;
+/**
+ * The world's geometry, softened by how far out of focus each point is: a
+ * small ring of taps whose radius is that point's circle of confusion.
+ */
+void worldTap(sampler2D tc, sampler2D tg, sampler2D ta, vec2 uv, bool soft, out vec4 c, out vec4 g, out vec4 a){
+  a = texture(ta, uv);
+  c = texture(tc, uv);
+  g = texture(tg, uv);
+  float r = a.r * uWorldBlur;
+  if (!soft || r < 0.6) return;
+  const int N = 10;
+  float rot = hash21(uv * 913.0) * 6.2831;
+  float wsum = 1.0;
+  for (int i = 0; i < N; i++) {
+    float t = (float(i) + 0.5) / float(N);
+    float ang = rot + float(i) * 2.39996;
+    vec2 off = vec2(cos(ang), sin(ang)) * sqrt(t) * r * uTexel;
+    c += texture(tc, uv + off);
+    g += texture(tg, uv + off);
+    wsum += 1.0;
+  }
+  c /= wsum;
+  g /= wsum;
+}
+
+`;
+
+/**
+ * Whatever stands between the play plane and the lens, laid over the
+ * foreground layers with its own focus blur.
+ */
+export const FS_NEAR =
+  HEAD +
+  NOISE +
+  WORLDTAP +
+  `
+uniform sampler2D uC;
+uniform sampler2D uG;
+uniform sampler2D uA;
+in vec2 vUv;
+layout(location = 0) out vec4 oC;
+layout(location = 1) out vec4 oG;
+void main(){
+  vec4 c, g, a;
+  worldTap(uC, uG, uA, vUv, true, c, g, a);
+  oC = c;
+  oG = g;
+}`;
+
 export const FS_MAIN =
   HEAD +
   NOISE +
+  WORLDTAP +
   SHARP +
   `
 uniform sampler2D uFarC;
@@ -215,6 +271,12 @@ uniform sampler2D uFgG;
 uniform sampler2D uLight;
 uniform sampler2D uPlayRC;
 uniform sampler2D uPlayRG;
+uniform sampler2D uWorldC;
+uniform sampler2D uWorldG;
+uniform sampler2D uWorldA;
+uniform float uWorldOn;
+uniform float uFloorRow;
+uniform float uHorizonRow;
 uniform float uPlayPre;
 uniform float uFgFade;
 uniform vec2 uView;
@@ -252,11 +314,23 @@ vec2 sceneToTex(vec2 sp){
   return vec2(p.x / uTexSize.x, 1.0 - p.y / uTexSize.y);
 }
 
-void compose(vec2 uv, out vec3 col, out vec3 glow){
+void compose(vec2 uv, bool soft, bool play, out vec3 col, out vec3 glow){
   vec4 f = texture(uFarC, uv);
   vec3 fg = texture(uFarG, uv).rgb;
   col = f.rgb * uAmbFar + fg;
   glow = fg;
+  // The world's depth geometry arrives lit and fogged. What lies beyond the
+  // middle distance goes under the mid layers; the rest goes over them.
+  vec4 wc = vec4(0.0);
+  vec4 wg = vec4(0.0);
+  float wfar = 0.0;
+  if (uWorldOn > 0.5) {
+    vec4 wa;
+    worldTap(uWorldC, uWorldG, uWorldA, uv, soft, wc, wg, wa);
+    wfar = step(0.5, wa.b);
+    col = mix(col, col * (1.0 - wc.a) + wc.rgb, wfar);
+    glow = mix(glow, glow * (1.0 - wg.a) + wg.rgb, wfar);
+  }
   vec4 m = texture(uMidC, uv);
   vec4 mg = texture(uMidG, uv);
   col = col * (1.0 - m.a) + m.rgb * uAmbMid + mg.rgb;
@@ -266,6 +340,10 @@ void compose(vec2 uv, out vec3 col, out vec3 glow){
   float fa = clamp(uFogMid * (0.5 + 1.0 * fn), 0.0, 1.0);
   col = mix(col, uFogColor, fa);
   glow *= 1.0 - 0.45 * fa;
+  // Open water lies behind the action: what it mirrors is the far side, not the quay and the people in front of it.
+  if (!play) return;
+  col = mix(col * (1.0 - wc.a) + wc.rgb, col, wfar);
+  glow = mix(glow * (1.0 - wg.a) + wg.rgb, glow, wfar);
   vec4 p;
   vec4 pg;
   if (uPlayPre > 0.5) {
@@ -284,7 +362,7 @@ void compose(vec2 uv, out vec3 col, out vec3 glow){
 
 void main(){
   vec3 col, glow;
-  compose(vUv, col, glow);
+  compose(vUv, true, true, col, glow);
   vec2 sp = screenToScene(vUv);
   vec3 L = texture(uLight, vUv).rgb;
 
@@ -308,13 +386,48 @@ void main(){
       vec2 mp = vec2(tpx.x + rp, lineY - d - k * (1.0 + d * 0.18));
       vec2 muv = sceneToScreen(mp - uOffPlay - uPad);
       vec3 c2, g2;
-      compose(clamp(muv, vec2(0.0), vec2(1.0)), c2, g2);
+      compose(clamp(muv, vec2(0.0), vec2(1.0)), false, true, c2, g2);
       racc += c2;
       gacc += g2;
     }
     float fres = mk.g * uReflect * mix(1.0, 0.35, smoothstep(0.0, 46.0, d));
     col += racc * (fres / 3.0);
     glow += gacc * (fres / 3.0) * 0.6;
+  }
+
+  // The same for the world's floors, which have no mask: in front of the play
+  // plane they mirror it about its ground line; beyond it, the far distance
+  // about the horizon.
+  if (uWorldOn > 0.5 && uReflect > 0.0) {
+    vec4 wa = texture(uWorldA, vUv);
+    vec4 here = sharpTex(uPlayC, sceneToTex(sp));
+    // What stands in the middle distance stands in front of the far floor it covers.
+    float over = 1.0 - texture(uMidC, vUv).a * step(0.5, wa.b);
+    float wet = wa.g * (1.0 - here.a) * over;
+    if (wet > 0.004) {
+      bool water = wa.g > 0.95;
+      float near = step(uFloorRow, sp.y);
+      float axis = mix(uHorizonRow, uFloorRow, near);
+      float d = abs(sp.y - axis);
+      // Water smears a light into a long streak rather than shaking it sideways.
+      float wob = vnoise(vec2(sp.x * 0.11 + uTime * 0.5, d * 0.8 - uTime * 1.6)) - 0.5;
+      float rp = wob * uRipple * (water ? 0.55 + d * 0.012 : 1.0 + d * 0.06);
+      float smear = water ? 0.3 : 0.14;
+      vec3 racc = vec3(0.0);
+      vec3 gacc = vec3(0.0);
+      for (int i = 0; i < 3; i++) {
+        float k = float(i) - 1.0;
+        vec2 mp = vec2(sp.x + rp, axis - (sp.y - axis) - k * (1.0 + d * smear));
+        vec3 c2, g2;
+        compose(clamp(sceneToScreen(mp), vec2(0.0), vec2(1.0)), false, !water, c2, g2);
+        racc += c2;
+        gacc += g2;
+      }
+      float fall = water ? mix(0.92, 0.62, smoothstep(20.0, 140.0, d)) : mix(1.0, 0.3, smoothstep(0.0, 70.0, d)) * mix(0.55, 1.0, near);
+      float fres = wet * uReflect * fall;
+      col += racc * (fres / 3.0);
+      glow += gacc * (fres / 3.0) * 0.6;
+    }
   }
 
   // Light scattering in the air: makes beams and halos visible in fog and rain.
@@ -334,6 +447,153 @@ void main(){
 
   oC = vec4(col, 1.0);
   oG = vec4(glow, 1.0);
+}`;
+
+/**
+ * The world's depth geometry (floors, sides and tops of blocks, set-back
+ * walls), projected through a perspective lens. The play plane sits at
+ * depth 0 and is unaffected by any of this: the lens can shift its vanishing
+ * point (to look down on the ground, or along a street) without the pixel art
+ * in the play plane changing at all.
+ */
+export const VS_WORLD = `#version 300 es
+layout(location = 0) in vec3 aPos;
+layout(location = 1) in vec2 aUv;
+layout(location = 2) in vec4 aRect;
+layout(location = 3) in vec4 aMat;
+layout(location = 4) in vec3 aAvg;
+uniform vec2 uEye;
+uniform vec2 uVan;
+uniform float uDz;
+uniform float uFocal;
+uniform vec2 uRot;
+uniform vec2 uView;
+out vec3 vPos;
+out vec2 vUv;
+out float vW;
+flat out vec4 vRect;
+flat out vec4 vMat;
+flat out vec3 vAvg;
+void main(){
+  // w is distance from the lens in focal lengths: the play plane is at 1 / zoom.
+  float w = (uDz + aPos.z) / uFocal;
+  vec2 q = uVan * w + (aPos.xy - uEye);
+  vec2 r = vec2(q.x * uRot.x + q.y * uRot.y, -q.x * uRot.y + q.y * uRot.x);
+  const float near = 0.03;
+  const float far = 90.0;
+  float zc = (w * (far + near) - 2.0 * far * near) / (far - near);
+  gl_Position = vec4(r.x / (uView.x * 0.5), -r.y / (uView.y * 0.5), zc, w);
+  // A floor is the top of something solid: from below it, there is nothing to see.
+  if (aMat.w >= 3.5 && uEye.y > aPos.y + 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+  vPos = aPos;
+  vUv = aUv;
+  vW = w;
+  vRect = aRect;
+  vMat = aMat;
+  vAvg = aAvg;
+}`;
+
+export const WORLD_LIGHTS = 28;
+export const WORLD_BLOBS = 16;
+
+export const FS_WORLD =
+  HEAD +
+  NOISE +
+  `
+uniform sampler2D uAtlasC;
+uniform sampler2D uAtlasG;
+uniform vec2 uAtlasSize;
+uniform vec3 uAmb;
+uniform vec3 uFogColor;
+uniform float uFogK;
+uniform float uMidW;
+uniform float uFocusInv;
+uniform int uNL;
+uniform vec4 uLpos[${28}];
+uniform vec4 uLcol[${28}];
+uniform vec4 uLcone[${28}];
+uniform int uNB;
+uniform vec4 uBlob[${16}];
+in vec3 vPos;
+in vec2 vUv;
+in float vW;
+flat in vec4 vRect;
+flat in vec4 vMat;
+flat in vec3 vAvg;
+layout(location = 0) out vec4 oC;
+layout(location = 1) out vec4 oG;
+layout(location = 2) out vec4 oA;
+void main(){
+  float flags = vMat.w;
+  bool isFloor = flags >= 3.5;
+  flags -= isFloor ? 4.0 : 0.0;
+  bool cut = flags >= 1.5;
+  flags -= cut ? 2.0 : 0.0;
+  bool tile = flags >= 0.5;
+
+  // Pixel-art sampling: hard texels, softened by one output pixel at their edges.
+  vec2 fw = max(fwidth(vUv), vec2(1e-5));
+  vec2 t = tile ? mod(vUv, vRect.zw) : vUv;
+  vec2 i = floor(t);
+  vec2 f = t - i;
+  vec2 sc = 1.0 / fw;
+  vec2 st = clamp(f * sc, 0.0, 0.5) + clamp((f - 1.0) * sc + 0.5, 0.0, 0.5);
+  vec2 tt = clamp(i + st, vec2(0.5), vRect.zw - 0.5);
+  vec2 uv = (vRect.xy + tt) / uAtlasSize;
+  uv.y = 1.0 - uv.y;
+  vec4 c = texture(uAtlasC, uv);
+  vec4 g = texture(uAtlasG, uv);
+  if (cut && c.a < 0.5) discard;
+  if (!cut) { c.rgb /= max(c.a, 0.001); c.a = 1.0; }
+  // Too far away to resolve: settle to the texture's mean instead of shimmering.
+  float foot = max(fw.x, fw.y);
+  float flat_ = cut ? 0.0 : smoothstep(0.8, 2.2, foot);
+  c.rgb = mix(c.rgb, vAvg * c.a, flat_);
+  g.rgb *= 1.0 - flat_ * 0.6;
+
+  // Open sky reaches what faces up; walls get what bounces.
+  vec3 amb = uAmb * (isFloor ? 1.35 : 1.0);
+  vec3 light = amb;
+  for (int k = 0; k < uNL; k++) {
+    vec3 d = vPos - uLpos[k].xyz;
+    float dist = length(d);
+    float a = pow(clamp(1.0 - dist / uLpos[k].w, 0.0, 1.0), uLcol[k].w);
+    if (uLcone[k].w > -0.999) {
+      float cd = dot(d / max(dist, 0.001), vec3(uLcone[k].xy, 0.0));
+      a *= smoothstep(uLcone[k].w, uLcone[k].z, cd);
+    }
+    light += uLcol[k].rgb * a;
+  }
+  light = mix(amb, light, vMat.y);
+  float shade = vMat.x;
+  if (isFloor) {
+    // Whoever stands on a floor leaves a soft patch of dark under them.
+    for (int k = 0; k < uNB; k++) {
+      vec4 b = uBlob[k];
+      if (abs(vPos.y - b.y) > 3.0) continue;
+      float e = length(vec2(vPos.x - b.x, (vPos.z - b.z) * 0.9)) / b.w;
+      shade *= 1.0 - 0.5 * (1.0 - smoothstep(0.35, 1.0, e));
+    }
+  }
+  vec3 col = c.rgb * light * shade + g.rgb;
+  float fa = 1.0 - exp(-max(vPos.z, 0.0) * uFogK);
+  // Water does not lie evenly: broad puddles, with merely damp ground between them.
+  float wet = 0.0;
+  if (isFloor && vMat.z > 1.5) {
+    // Open water mirrors everywhere. (1.0 here is how the composite knows it from a wet floor.)
+    wet = 1.0;
+  } else if (isFloor && vMat.z > 0.0) {
+    float pud = fbm(vPos.xz * vec2(0.021, 0.034));
+    float pool = smoothstep(0.46, 0.6, pud);
+    wet = min(0.9, vMat.z * mix(0.32, 1.0, pool) * (1.0 - fa));
+    col *= mix(1.0, 0.72, pool);
+  }
+  col = mix(col, uFogColor * c.a, fa);
+  oC = vec4(col, c.a);
+  oG = vec4(g.rgb * (1.0 - 0.7 * fa), c.a);
+  // How far out of focus: 0 at the focal distance, 1 at infinity (or right at the lens).
+  float coc = clamp(abs(uFocusInv - 1.0 / vW) / max(uFocusInv, 0.35), 0.0, 1.0);
+  oA = vec4(coc, wet, step(uMidW, vW), 1.0);
 }`;
 
 /** Dual-filter downsample (bloom). uTexel = 1 / source size. */

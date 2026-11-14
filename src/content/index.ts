@@ -3,6 +3,8 @@ import { mast } from './ch0';
 import { lanes } from './ch1';
 import { tops } from './ch2';
 import { yards } from './ch3';
+import { quay } from './ch3b';
+import { tide } from './ch3c';
 import { spire } from './ch4';
 import { dawn, ENDINGS } from './ch5';
 
@@ -13,12 +15,14 @@ export const CHAPTERS: Record<string, Chapter> = {
   lanes,
   tops,
   yards,
+  quay,
+  tide,
   spire,
   dawn,
 };
 
 /** Play order (also the order shown in chapter select). */
-export const ORDER: string[] = ['mast', 'lanes', 'tops', 'yards', 'spire', 'dawn'];
+export const ORDER: string[] = ['mast', 'lanes', 'tops', 'yards', 'quay', 'tide', 'spire', 'dawn'];
 export const FIRST_CHAPTER = 'mast';
 
 /** The backdrop behind the title menu: a real scene with nobody at the controls. */

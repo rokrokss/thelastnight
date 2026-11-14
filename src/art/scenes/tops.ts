@@ -3,6 +3,7 @@ import { mix, shade } from '../../core/color';
 import { Rng } from '../../core/math';
 import type { LevelData, PropDef, Solid } from '../../game/level';
 import { cityBackdrop, paintForeground } from '../backdrop';
+import { backRow, plain, roofClutter, roofTile, sideWallTile, streetBelowTile, streetKit } from '../depth';
 import { GLOW, RAMP } from '../palette';
 import { acUnit, cable, glow, maskFloor, maskOccluder, seedOf, wall, windowUnit, type PaintCtx } from '../paint';
 import { paintProp } from '../props';
@@ -283,6 +284,23 @@ export function paintTops(level: LevelData): SceneArt {
     a.halo(cx, bottom - 10, 150, col, 0.5);
     a.halo(cx, bottom + 30, 90, '#ffffff', 0.22);
   }
+  // The roofs as the tops of whole buildings: each runs back from its parapet,
+  // its walls drop into the street far below, and more of the city stands behind.
+  const kit = streetKit(c, 0.3);
+  const roofTex = roofTile(c.depth, level.seed + 31);
+  const street = level.height + 520;
+  c.depth.floorY = street;
+  plain(c, street, streetBelowTile(c.depth, level.seed + 32), { wet: 0.5, lit: 0 }, -400);
+  const wallTex = [RAMP.concrete, RAMP.brick, RAMP.plaster].map((r, i) => sideWallTile(c.depth, r, level.seed + 40 + i));
+  roofs.forEach((s, i) => {
+    const depth = 200 + ((s.x * 7) % 140);
+    c.depth.side(s.x, s.y, street, 0, depth, wallTex[i % 3]!, { tile: true });
+    c.depth.side(s.x + s.w, s.y, street, 0, depth, wallTex[i % 3]!, { tile: true, u0: 36 });
+    c.depth.floor(s.x, s.x + s.w, s.y, 0, depth, roofTex, { tile: true, wet: 0.3 });
+    roofClutter(c, s.x, s.x + s.w, s.y, depth, level.seed + 50 + i);
+  });
+  backRow(c, kit, { z: 420, height: [430, 700], width: [120, 240], gap: [20, 90], foot: street, seed: level.seed + 33 });
+  backRow(c, kit, { z: 760, height: [520, 860], width: [140, 260], gap: [0, 60], foot: street, seed: level.seed + 34 });
   for (const s of roofs) roofBlock(c, s, bottom);
   for (const p of level.props) if (!roofProp(c, p)) paintProp(c, art, p);
   for (const s of level.solids) if (s.tag !== 'roof') paintSolid(c, s);

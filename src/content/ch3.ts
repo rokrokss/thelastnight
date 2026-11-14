@@ -28,6 +28,11 @@ function buildYards(): LevelData {
   b.prop('firebarrel', 350, G);
   b.prop('forklift', 384, G);
   b.npc({ id: 'gil', x: 326, y: G, look: 'gil', anim: 'sit', facing: 1, prompt: 'Talk' });
+  // The night shift, working between the rows behind and crossing the apron in front.
+  b.npc({ id: 'w1', x: 760, y: G, look: 'dock_m', patrol: [480, 1180], speed: 22, extra: true, z: 150 });
+  b.npc({ id: 'w2', x: 1620, y: G, look: 'heavy_m', patrol: [1380, 2100], speed: 18, extra: true, z: 146 });
+  b.npc({ id: 'w3', x: 2100, y: G, look: 'dock_m', patrol: [1700, 2500], speed: 24, extra: true, z: 240 });
+  b.npc({ id: 'w4', x: 1100, y: G, look: 'fisher_m', patrol: [300, 1900], speed: 20, extra: true, z: -130 });
 
   // Low rows, one Listener.
   box(440, 1);
@@ -155,10 +160,11 @@ export const yards: Chapter = {
     d.lock();
     await d.bars(true, 0);
     // Open on the floodlights and the working cranes with the far yard sharp, then come down to the gate.
-    d.cut({ x: 780, y: 300, zoom: 1, rack: -0.8, roll: 0 });
+    d.cut({ x: 780, y: 380, zoom: 1, rack: -0.8, roll: 0, shiftX: 90, shiftY: -160 });
     await d.wait(0.5);
     void d.fade(0, 2.2);
-    d.drift({ x: 320, y: 440, zoom: 1.05, rack: 0 }, 6.5);
+    // Over the tops of the stacks, row behind row, and down to the gate.
+    d.drift({ x: 320, y: 440, zoom: 1.05, rack: 0, shiftX: 0, shiftY: -30 }, 6.5);
     await d.card('CHAPTER THREE', 'THE YARDS', 'The cranes work nights. So does the tide.');
     d.drift({ on: 'sol', zoom: 1.3, dx: 30, dy: -10 }, 2.2);
     await d.walk('sol', 150, 34);
@@ -325,13 +331,13 @@ export const yards: Chapter = {
       await d.say('sol', 'The Spire. Its service lift is on the far side of the channel.');
       d.sfx('static');
       d.cut({ on: 'sol', zoom: 1.7, dx: 0, dy: -6, rack: 0 });
-      await d.say('gil_radio', 'Then stay on the boom, mast-girl. I still have the override key. I will swing you across.');
-      // The boom swings: the horizon tips and the frame pulls wide.
-      d.shake(0.45);
-      d.sfx('gust', 0.8);
-      d.drift({ on: 'sol', zoom: 1.04, dx: 60, dy: -10, roll: 0.07, rack: -0.4 }, 1.9, 'in');
+      await d.say('gil_radio', 'Then come down to the quay, mast-girl. I still have the override key. I will swing you across from the hook.');
+      // Far below, a lamp is coming along the water toward the crane.
+      d.sfx('spot', 0.5);
+      d.drift({ on: 'sol', zoom: 1.04, dx: 60, dy: 30, roll: 0.03, rack: -0.4 }, 1.9, 'in');
+      await d.say('mun', 'Be quick. Something of Meridian’s just put out from the harbour gate, and it is not a Listener.');
       await d.fade(1, 1.6);
-      d.leave('spire');
+      d.leave('quay');
     },
   },
 };

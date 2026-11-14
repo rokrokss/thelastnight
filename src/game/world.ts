@@ -9,6 +9,7 @@ import {
 } from '../core/math';
 import type { Anim } from '../art/puppet';
 import { Camera } from './camera';
+import type { Combat } from './combat';
 import type {
   CheckpointDef,
   DroneDef,
@@ -48,7 +49,7 @@ export interface Fx {
   s?: string;
 }
 
-export type FailReason = 'caught' | 'fall';
+export type FailReason = 'caught' | 'fall' | 'downed';
 
 interface AutoMove {
   x: number;
@@ -384,10 +385,13 @@ export class Actor {
   hop: { x0: number; y0: number; x1: number; y1: number; t: number; dur: number; h: number; done: () => void } | null =
     null;
   talking = 0;
+  /** Depth: 0 is the play plane (see NpcDef.z). */
+  z: number;
   private wait = 0;
   private dirSign: 1 | -1 = 1;
 
   constructor(d: NpcDef, seed: number) {
+    this.z = d.z ?? 0;
     this.id = d.id;
     this.look = d.look;
     this.x = d.x;
@@ -712,6 +716,8 @@ export class World {
   weather: Weather;
   fx: Fx[] = [];
   near: Target | null = null;
+  /** The fight, while there is one (set up by the chapter): the rivet gun, health, Enforcers, the Undertow. */
+  combat: Combat | null = null;
   checkpoint: CheckpointDef | null = null;
   readonly fired = new Set<string>();
   onTrigger: ((id: string) => void) | null = null;
@@ -942,6 +948,7 @@ export class World {
 
     p.update(dt, inp, this);
     for (const a of this.actors) a.update(dt);
+    this.combat?.update(dt, inp, this);
 
     let detect = 0;
     for (const d of this.drones) {

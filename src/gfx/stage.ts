@@ -1,6 +1,7 @@
 import { shade } from '../core/color';
 import { ctx2d, makeCanvas, type Art, type Ctx } from './art';
 import { PAD, TEX_H, TEX_W, type Surfaces } from './renderer';
+import { SpriteBatch } from './world';
 
 export type LayerGroup = 'far' | 'mid' | 'fg';
 
@@ -25,6 +26,8 @@ function drawClipped(k: Ctx, img: HTMLCanvasElement, dx: number, dy: number): vo
  */
 export class Stage {
   readonly surf: Surfaces;
+  /** Sprites standing at their own depth this frame. */
+  readonly sprites = new SpriteBatch();
   private pc: Ctx;
   private pg: Ctx;
   private mk: Ctx;
@@ -35,6 +38,21 @@ export class Stage {
   camY = 0;
   ix = 0;
   iy = 0;
+  /** The lens position, as a view corner like camX/camY: equal to them when the lens is not shifted. */
+  eyeX = 0;
+  eyeY = 0;
+  /** Where the vanishing point sits relative to the frame centre. */
+  vanX = 0;
+  vanY = 0;
+  /**
+   * How far below the frame centre the ground lay when the distant layers
+   * were painted (0 if the scene has no ground plane). With a real horizon,
+   * each layer rises by its share of this, so its foot stands on the ground at
+   * its own distance instead of on the play plane's ground line.
+   */
+  lift = 0;
+  /** The lens shift the scene's foreground layers were composed for: they only move when it departs from this. */
+  restY = 0;
 
   constructor() {
     const mk = (): HTMLCanvasElement => makeCanvas(TEX_W, TEX_H);
@@ -59,11 +77,16 @@ export class Stage {
     this.all = [this.pc, this.pg, ...Object.values(this.lc), ...Object.values(this.lg)];
   }
 
-  begin(camX: number, camY: number): void {
+  begin(camX: number, camY: number, eyeX = camX, eyeY = camY, vanX = 0, vanY = 0): void {
     this.camX = camX;
     this.camY = camY;
+    this.eyeX = eyeX;
+    this.eyeY = eyeY;
+    this.vanX = vanX;
+    this.vanY = vanY;
     this.ix = Math.floor(camX);
     this.iy = Math.floor(camY);
+    this.sprites.begin();
     for (const k of this.all) k.clearRect(0, 0, TEX_W, TEX_H);
     this.mk.fillStyle = '#000';
     this.mk.fillRect(0, 0, TEX_W, TEX_H);
@@ -105,6 +128,11 @@ export class Stage {
         k.restore();
       } else k.drawImage(img, dx, dy);
     }
+  }
+
+  /** Small art standing at depth z (behind the play plane if positive, in front if negative). */
+  depthSprite(art: Art, wx: number, wy: number, z: number, flip = false, scale = 1, shade = 1, lit = 1): void {
+    this.sprites.add(art, wx, wy, z, flip, scale, shade, lit);
   }
 
   rect(wx: number, wy: number, w: number, h: number, col: string, alpha = 1): void {
@@ -150,12 +178,28 @@ export class Stage {
   // ------------------------------------------------------------ parallax groups
 
   /**
+   * Vertical correction for a layer with scroll factor `py`. Distant layers
+   * rise so their feet stand on the ground at their own distance. Foreground
+   * layers were composed by eye around the action, so they stay where they
+   * were put for the scene's resting lens.
+   */
+  private settle(py: number): number {
+    return py > 1 ? this.restY * (1 - py) : this.lift * (1 - py);
+  }
+
+  /**
    * Draw art into a parallax group. (lx, ly) is the art's position in that
    * layer's own space; px / py are its scroll factors relative to the camera.
    */
   layer(group: LayerGroup, art: Art, lx: number, ly: number, px: number, py: number, alpha = 1): void {
-    const dx = lx - this.camX * px + PAD;
-    const dy = ly - this.camY * py + PAD;
+    // Distant layers scroll with the lens and hang off the vanishing point.
+    let dx = lx - this.eyeX * px + this.vanX + PAD;
+    let dy = ly - this.eyeY * py + this.vanY - this.settle(py) + PAD;
+    // A backdrop that fills the frame must keep filling it: a shifted lens may
+    // slide it, but never far enough to show its side or top edge. (Its lower
+    // edge is always behind the ground.)
+    if (art.w >= TEX_W) dx = Math.min(0, Math.max(TEX_W - art.w, dx));
+    if (art.h >= TEX_H) dy = Math.min(0, dy);
     if (dx >= TEX_W || dy >= TEX_H || dx + art.w <= 0 || dy + art.h <= 0) return;
     const c = this.lc[group];
     const g = this.lg[group];
@@ -183,8 +227,8 @@ export class Stage {
     emissive = false,
     alpha = 1,
   ): void {
-    const dx = lx - this.camX * px + PAD;
-    const dy = ly - this.camY * py + PAD;
+    const dx = lx - this.eyeX * px + this.vanX + PAD;
+    const dy = ly - this.eyeY * py + this.vanY - this.settle(py) + PAD;
     const c = this.lc[group];
     const g = this.lg[group];
     c.globalAlpha = alpha;

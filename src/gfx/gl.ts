@@ -43,14 +43,17 @@ export interface Target {
   tex: WebGLTexture[];
   w: number;
   h: number;
+  rb?: WebGLRenderbuffer | null;
 }
 
 export function makeTarget(
   gl: WebGL2RenderingContext,
   w: number,
   h: number,
-  attachments: 1 | 2,
+  attachments: 1 | 2 | 3,
   hdr: boolean,
+  /** Also attach a depth buffer (for real geometry). */
+  depth = false,
 ): Target {
   w = Math.max(2, Math.floor(w));
   h = Math.max(2, Math.floor(h));
@@ -70,19 +73,27 @@ export function makeTarget(
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0 + i, gl.TEXTURE_2D, t, 0);
     tex.push(t);
   }
-  gl.drawBuffers(attachments === 2 ? [gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1] : [gl.COLOR_ATTACHMENT0]);
+  gl.drawBuffers(tex.map((_, i) => gl.COLOR_ATTACHMENT0 + i));
+  let rb: WebGLRenderbuffer | null = null;
+  if (depth) {
+    rb = gl.createRenderbuffer();
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT24, w, h);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.RENDERBUFFER, rb);
+  }
   const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
   if (status !== gl.FRAMEBUFFER_COMPLETE) {
     throw new Error(`framebuffer incomplete (0x${status.toString(16)}, hdr=${hdr})`);
   }
   gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-  return { fbo, tex, w, h };
+  return { fbo, tex, w, h, rb };
 }
 
 export function freeTarget(gl: WebGL2RenderingContext, t: Target | null | undefined): void {
   if (!t) return;
   gl.deleteFramebuffer(t.fbo);
   for (const x of t.tex) gl.deleteTexture(x);
+  if (t.rb) gl.deleteRenderbuffer(t.rb);
 }
 
 /** Texture that receives a 2D canvas every frame. */
