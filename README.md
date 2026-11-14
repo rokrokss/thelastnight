@@ -3,8 +3,11 @@
 <p align="center">
   <a href="https://github.com/rokrokss/thelastnight/releases/tag/trailer-v1"><img src="media/trailer-preview.gif" alt="A few seconds from each part of the SKYWAVE trailer: the night market, the rooftops, the gunfight on the quay, the Undertow" width="560"></a>
 </p>
+
+https://github.com/user-attachments/assets/86a8e252-9ebf-44e7-bd95-a18ef1a17687
+
 <p align="center">
-  <b><a href="https://github.com/rokrokss/thelastnight/releases/download/trailer-v1/skywave-trailer.mp4">Watch the full trailer</a></b> (95 seconds, 1080p at 60 fps, with sound; a 76 MB download)
+  The trailer, with sound (95 seconds; unmute the player). <a href="https://github.com/rokrokss/thelastnight/releases/download/trailer-v1/skywave-trailer.mp4">Full quality: 1080p at 60 fps, a 76 MB download</a>
 </p>
 
 A cinematic pixel-art platformer for the browser. One foggy night in the port
@@ -159,8 +162,8 @@ ffmpeg on the machine; nothing else is installed.
 
 The finished film is attached to the
 [`trailer-v1` release](https://github.com/rokrokss/thelastnight/releases/tag/trailer-v1).
-GitHub does not play video files in a README, so the clip at the top of this
-page is a silent cut of it: a few seconds from each part, as
+The player at the top of this page is a smaller copy of it (960x540), and the
+clip above the player is a silent cut: a few seconds from each part, as
 `media/trailer-preview.gif`.
 
 The trailer is shot in the game itself, not captured from a play session.
